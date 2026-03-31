@@ -28,14 +28,14 @@ Local-first web search and reading tools for AI agents. Zero cost, no API keys, 
 
 ```bash
 # Clone and build
-git clone https://github.com/JinFanZheng/web-tools.git
+git clone https://github.com/koda-claw/web-tools.git
 cd web-tools
 go build -o web-tools .
 # Optionally install to PATH
 mv web-tools /usr/local/bin/  # or ~/go/bin/
 ```
 
-Or download pre-built binaries from [GitHub Releases](https://github.com/JinFanZheng/web-tools/releases).
+Or download pre-built binaries from [GitHub Releases](https://github.com/koda-claw/web-tools/releases).
 
 This produces a single binary `web-tools` with two subcommands.
 

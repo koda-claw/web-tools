@@ -13,20 +13,20 @@ Zero cost. No API keys. No third-party dependencies.
 
 ### Download binary
 
-Download from [GitHub Releases](https://github.com/JinFanZheng/web-tools/releases):
+Download from [GitHub Releases](https://github.com/koda-claw/web-tools/releases):
 
 ```bash
 # macOS ARM64
-curl -sL https://github.com/JinFanZheng/web-tools/releases/latest/download/web-tools-darwin-arm64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
+curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-darwin-arm64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
 
 # macOS x64
-curl -sL https://github.com/JinFanZheng/web-tools/releases/latest/download/web-tools-darwin-amd64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
+curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-darwin-amd64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
 
 # Linux x64
-curl -sL https://github.com/JinFanZheng/web-tools/releases/latest/download/web-tools-linux-amd64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
+curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-linux-amd64 -o /usr/local/bin/web-tools && chmod +x /usr/local/bin/web-tools
 
 # Windows x64
-curl -sL https://github.com/JinFanZheng/web-tools/releases/latest/download/web-tools-windows-amd64.exe -o /usr/local/bin/web-tools.exe
+curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-windows-amd64.exe -o /usr/local/bin/web-tools.exe
 ```
 
 ### Build from source
@@ -34,7 +34,7 @@ curl -sL https://github.com/JinFanZheng/web-tools/releases/latest/download/web-t
 Requires Go 1.23+.
 
 ```bash
-git clone https://github.com/JinFanZheng/web-tools.git
+git clone https://github.com/koda-claw/web-tools.git
 cd web-tools
 go build -o web-tools .
 ```
@@ -78,7 +78,7 @@ web-tools web-reader ./report.pdf
 Compatible with [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI:
 
 ```bash
-npx skills add JinFanZheng/web-tools
+npx skills add koda-claw/web-tools
 ```
 
 This installs the SKILL.md to your agent's skills directory, enabling AI agents to use web-tools automatically.
