@@ -8,8 +8,8 @@ import (
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/go-shiori/go-readability"
-	"github.com/vanzheng/web-tools/internal/config"
-	apperrors "github.com/vanzheng/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/config"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
 )
 
 // ExtractResult holds the extracted content from a web page.

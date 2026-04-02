@@ -17,12 +17,12 @@ Local-first web search and reading tools for AI agents. Zero cost, no API keys, 
 
 ## Prerequisites
 
-- **web-search requires**: SearXNG Docker container running on `localhost:8888`
-  - Start: `docker compose up -d` (from the `docker/` directory in this repo)
-  - Verify: `curl -s -o /dev/null -w "%{http_code}" http://localhost:8888`
-- **web-reader**: Works standalone. Optional dependencies:
+- **web-reader**: Works standalone, no external services needed. Optional dependencies:
   - `markitdown` (`pip install markitdown`) — for PDF/DOCX/PPTX/XLSX file conversion
   - `agent-browser` (`npm i -g agent-browser`) — for browser fallback on JS-rendered pages
+- **web-search requires**: SearXNG Docker container running on `localhost:8888`
+  - Start: `cd docker && docker compose up -d` (relative to repo root)
+  - Verify: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
 
 ## Building
 

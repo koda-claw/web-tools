@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/vanzheng/web-tools/cmd/web-reader"
-	"github.com/vanzheng/web-tools/cmd/web-search"
+	"github.com/koda-claw/web-tools/cmd/web-reader"
+	"github.com/koda-claw/web-tools/cmd/web-search"
 )
 
 var version = "dev"

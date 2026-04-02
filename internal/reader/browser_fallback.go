@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vanzheng/web-tools/internal/config"
-	apperrors "github.com/vanzheng/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/config"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
 )
 
 // BrowserFallback handles browser-based content extraction via agent-browser subprocess.

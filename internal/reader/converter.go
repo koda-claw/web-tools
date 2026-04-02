@@ -5,8 +5,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/vanzheng/web-tools/internal/config"
-	apperrors "github.com/vanzheng/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/config"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
 )
 
 // Converter handles file format conversion via markitdown subprocess.

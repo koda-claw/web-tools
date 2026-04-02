@@ -3,7 +3,7 @@ package search
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/vanzheng/web-tools/internal/config"
+	"github.com/koda-claw/web-tools/internal/config"
 	"strings"
 	"time"
 )

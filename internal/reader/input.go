@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vanzheng/web-tools/internal/config"
+	"github.com/koda-claw/web-tools/internal/config"
 )
 
 // InputType distinguishes between URL and local file inputs.

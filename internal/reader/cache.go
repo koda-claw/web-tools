@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/vanzheng/web-tools/internal/config"
+	"github.com/koda-claw/web-tools/internal/config"
 )
 
 // Cache provides local file-based caching for reader results.

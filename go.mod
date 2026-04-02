@@ -1,4 +1,4 @@
-module github.com/vanzheng/web-tools
+module github.com/koda-claw/web-tools
 
 go 1.24.3
 
