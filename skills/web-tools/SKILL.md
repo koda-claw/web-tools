@@ -1,6 +1,6 @@
 ---
 name: web-tools
-description: Local-first web search and reading CLI for AI agents. Zero cost, no API keys. Use this skill whenever the user asks to search the web, find information online, read an article or webpage, extract content from a URL, or convert files (PDF, DOCX, PPTX, XLSX) to Markdown. Replaces mcp__web_search and mcp__web_reader. Trigger on phrases like "search for", "look up", "find information", "read this article", "what does this page say", "search the web", "google this", or any task that needs web information retrieval.
+description: Local-first web search and reading CLI for AI agents. Zero cost, no API keys. Use this skill whenever the user asks to search the web, find information online, read an article or webpage, extract content from a URL, or convert files (PDF, DOCX, PPTX, XLSX) to Markdown. Trigger on phrases like "search for", "look up", "find information", "read this article", "what does this page say", "search the web", "google this", or any task that needs web information retrieval.
 allowed-tools: Bash(web-tools web-search:*), Bash(web-tools web-reader:*), Bash(docker compose:*)
 ---
 
@@ -32,7 +32,7 @@ git clone https://github.com/koda-claw/web-tools.git
 cd web-tools
 go build -o web-tools .
 # Optionally install to PATH
-mv web-tools /usr/local/bin/  # or ~/go/bin/
+mv web-tools ~/.local/bin/
 ```
 
 Or download pre-built binaries from [GitHub Releases](https://github.com/koda-claw/web-tools/releases).
