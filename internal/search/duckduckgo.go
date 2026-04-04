@@ -177,13 +177,16 @@ func parseDDGLiteHTML(body string) ([]RawResult, error) {
 
 	results := make([]RawResult, 0, count)
 	for i := 0; i < count; i++ {
+		// Resolve DDG redirect: //duckduckgo.com/l/?uddg=<real_url>&rut=<hash>
+		realURL := resolveDDGRedirect(links[i].href)
+
 		source := ""
-		if u, err := url.Parse(links[i].href); err == nil {
+		if u, err := url.Parse(realURL); err == nil {
 			source = u.Hostname()
 		}
 		results = append(results, RawResult{
 			Title:   links[i].title,
-			URL:     links[i].href,
+			URL:     realURL,
 			Snippet: snippets[i],
 			Source:  source,
 			Extra:   map[string]string{},
@@ -191,6 +194,45 @@ func parseDDGLiteHTML(body string) ([]RawResult, error) {
 	}
 
 	return results, nil
+}
+
+// resolveDDGRedirect extracts the real URL from a DDG Lite redirect link.
+//
+// DDG Lite wraps all result URLs as redirects:
+//
+//	//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com&rut=<hash>
+//
+// This function parses the uddg parameter and returns the decoded real URL.
+// If the href is not a DDG redirect (e.g. already a direct URL), it is returned as-is.
+func resolveDDGRedirect(href string) string {
+	// Quick check: DDG redirects contain "uddg="
+	if !strings.Contains(href, "uddg=") {
+		return href
+	}
+
+	// Ensure the href has a scheme for url.Parse to work correctly.
+	parsed := href
+	if strings.HasPrefix(parsed, "//") {
+		parsed = "https:" + parsed
+	}
+
+	u, err := url.Parse(parsed)
+	if err != nil {
+		return href
+	}
+
+	realURL := u.Query().Get("uddg")
+	if realURL == "" {
+		return href
+	}
+
+	// The uddg value is URL-encoded; decode it.
+	decoded, err := url.QueryUnescape(realURL)
+	if err != nil {
+		return realURL
+	}
+
+	return decoded
 }
 
 // isCaptchaPage returns true if the HTML looks like a DDG anti-bot challenge.
