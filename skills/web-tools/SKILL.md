@@ -20,9 +20,9 @@ Local-first web search and reading tools for AI agents. Zero cost, no API keys, 
 - **web-reader**: Works standalone, no external services needed. Optional dependencies:
   - `markitdown` (`pip install markitdown`) — for PDF/DOCX/PPTX/XLSX file conversion
   - `agent-browser` (`npm i -g agent-browser`) — for browser fallback on JS-rendered pages
-- **web-search requires**: SearXNG Docker container running on `localhost:8888`
-  - Start: `cd docker && docker compose up -d` (relative to repo root)
-  - Verify: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
+- **web-search**: Works standalone via DuckDuckGo Lite (zero dependencies). Optional advanced backend:
+  - SearXNG (aggregates Google, Bing, DDG): requires Docker → `cd docker && docker compose up -d`
+  - Verify SearXNG: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
 
 ## Building
 
@@ -43,7 +43,7 @@ This produces a single binary `web-tools` with two subcommands.
 
 ## web-search
 
-Search the web using a local SearXNG instance (aggregates Google, Bing, DuckDuckGo, etc.).
+Search the web using DuckDuckGo Lite by default (zero dependencies), or a local SearXNG instance for higher throughput and more sources.
 
 ### Usage
 
@@ -61,7 +61,7 @@ web-tools web-search "<query>" [flags]
 | `--locale` | string | `auto` | Language preference: `zh-CN`, `en-US`, `auto` |
 | `--category` | string | `general` | Category: `general` / `images` / `news` / `videos` / `files` |
 | `--time-range` | string | `any` | Time filter: `any` / `day` / `week` / `month` / `year` |
-| `--engine` | string | `searxng` | Search engine (only searxng available) |
+| `--engine` | string | `auto` | Search engine: `auto` / `duckduckgo` / `searxng` |
 
 ### Common patterns
 

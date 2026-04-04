@@ -12,42 +12,32 @@ import (
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
 )
 
-// SearXNGClient wraps the local SearXNG JSON API.
-type SearXNGClient struct {
+// SearXNGEngine wraps the local SearXNG JSON API and implements Engine.
+type SearXNGEngine struct {
 	baseURL    string
 	httpClient *http.Client
 	userAgent  string
 }
 
-// SearXNGResult represents a single result from SearXNG API.
-// ParsedURL is kept as raw JSON to handle both array-of-strings (SearXNG default)
-// and array-of-objects formats across versions.
-type SearXNGResult struct {
+// searxngResult represents a single result from SearXNG API (private).
+type searxngResult struct {
 	Title         string          `json:"title"`
 	URL           string          `json:"url"`
-	Content       string          `json:"content"`    // snippet
+	Content       string          `json:"content"` // snippet
 	Engines       []string        `json:"engines"`
 	ParsedURL     json.RawMessage `json:"parsed_url"`
 	PublishedDate *string         `json:"publishedDate"`
 }
 
-// SearXNGOptions holds query parameters for the SearXNG API.
-type SearXNGOptions struct {
-	Limit     int
-	Locale    string // "auto" / "zh-CN" / "en-US"
-	Category  string // "general" / "images" / "news" / "videos" / "files"
-	TimeRange string // "" / "day" / "week" / "month" / "year"
-}
-
-// searxngResponse is the raw JSON response from SearXNG.
+// searxngResponse is the raw JSON response from SearXNG (private).
 type searxngResponse struct {
-	Results   []SearXNGResult `json:"results"`
-	NumberOf int              `json:"number_of_results"`
+	Results  []searxngResult `json:"results"`
+	NumberOf int             `json:"number_of_results"`
 }
 
-// NewSearXNGClient creates a new client for the local SearXNG instance.
-func NewSearXNGClient(baseURL string) *SearXNGClient {
-	return &SearXNGClient{
+// NewSearXNGEngine creates a new SearXNG engine for the given base URL.
+func NewSearXNGEngine(baseURL string) *SearXNGEngine {
+	return &SearXNGEngine{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: time.Duration(config.DefaultTimeout) * time.Second,
@@ -56,33 +46,36 @@ func NewSearXNGClient(baseURL string) *SearXNGClient {
 	}
 }
 
+// Name returns the engine identifier.
+func (e *SearXNGEngine) Name() string { return "searxng" }
+
 // HealthCheck verifies that the SearXNG instance is reachable.
-func (c *SearXNGClient) HealthCheck() error {
+func (e *SearXNGEngine) HealthCheck() error {
 	client := &http.Client{Timeout: config.HealthCheckTimeout}
-	req, err := http.NewRequest("HEAD", c.baseURL, nil)
+	req, err := http.NewRequest("HEAD", e.baseURL, nil)
 	if err != nil {
 		return apperrors.NewEngineError(
 			"SearXNG health check request failed",
 			err.Error(),
-			map[string]string{"searxng_url": c.baseURL},
+			map[string]string{"searxng_url": e.baseURL},
 			[]string{
-				fmt.Sprintf("check SearXNG: curl -s -o /dev/null -w %%{http_code} %s", c.baseURL),
+				fmt.Sprintf("check SearXNG: curl -s -o /dev/null -w %%{http_code} %s", e.baseURL),
 				"start SearXNG: cd docker && docker compose up -d",
 			},
 		)
 	}
-	req.Header.Set("User-Agent", c.userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return apperrors.NewEngineError(
 			"SearXNG unreachable",
 			err.Error(),
-			map[string]string{"searxng_url": c.baseURL, "timeout": config.HealthCheckTimeout.String()},
+			map[string]string{"searxng_url": e.baseURL, "timeout": config.HealthCheckTimeout.String()},
 			[]string{
 				"start SearXNG: cd docker && docker compose up -d",
 				"check Docker: docker ps",
-				fmt.Sprintf("confirm port config: %s", c.baseURL),
+				fmt.Sprintf("confirm port config: %s", e.baseURL),
 			},
 		)
 	}
@@ -92,7 +85,7 @@ func (c *SearXNGClient) HealthCheck() error {
 		return apperrors.NewEngineError(
 			"SearXNG service error",
 			fmt.Sprintf("HTTP %d", resp.StatusCode),
-			map[string]string{"searxng_url": c.baseURL, "status_code": fmt.Sprintf("%d", resp.StatusCode)},
+			map[string]string{"searxng_url": e.baseURL, "status_code": fmt.Sprintf("%d", resp.StatusCode)},
 			[]string{"restart SearXNG: cd docker && docker compose restart", "logs: cd docker && docker compose logs"},
 		)
 	}
@@ -100,8 +93,8 @@ func (c *SearXNGClient) HealthCheck() error {
 	return nil
 }
 
-// Query sends a search query to SearXNG and returns parsed results.
-func (c *SearXNGClient) Query(query string, opts SearXNGOptions) ([]SearXNGResult, error) {
+// Query sends a search query to SearXNG and returns normalized results.
+func (e *SearXNGEngine) Query(query string, opts SearchOptions) ([]RawResult, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	params.Set("format", "json")
@@ -113,7 +106,7 @@ func (c *SearXNGClient) Query(query string, opts SearXNGOptions) ([]SearXNGResul
 		params.Set("time_range", opts.TimeRange)
 	}
 
-	reqURL := c.baseURL + "/search?" + params.Encode()
+	reqURL := e.baseURL + "/search?" + params.Encode()
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, apperrors.NewNetworkError(
@@ -123,14 +116,14 @@ func (c *SearXNGClient) Query(query string, opts SearXNGOptions) ([]SearXNGResul
 			nil,
 		)
 	}
-	req.Header.Set("User-Agent", c.userAgent)
+	req.Header.Set("User-Agent", e.userAgent)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := e.httpClient.Do(req)
 	if err != nil {
 		return nil, apperrors.NewNetworkError(
 			"SearXNG search request failed",
 			err.Error(),
-			map[string]string{"url": reqURL, "timeout": c.httpClient.Timeout.String()},
+			map[string]string{"url": reqURL, "timeout": e.httpClient.Timeout.String()},
 			[]string{"check network", "confirm SearXNG container is running"},
 		)
 	}
@@ -167,27 +160,38 @@ func (c *SearXNGClient) Query(query string, opts SearXNGOptions) ([]SearXNGResul
 	}
 
 	// Apply limit
-	if opts.Limit > 0 && len(sxr.Results) > opts.Limit {
-		sxr.Results = sxr.Results[:opts.Limit]
+	raw := sxr.Results
+	if opts.Limit > 0 && len(raw) > opts.Limit {
+		raw = raw[:opts.Limit]
 	}
 
-	return sxr.Results, nil
+	results := make([]RawResult, 0, len(raw))
+	for _, r := range raw {
+		extra := map[string]string{}
+		if r.PublishedDate != nil {
+			extra["published_date"] = *r.PublishedDate
+		}
+		results = append(results, RawResult{
+			Title:   r.Title,
+			URL:     r.URL,
+			Snippet: r.Content,
+			Source:  extractSearXNGSource(r),
+			Extra:   extra,
+		})
+	}
+
+	return results, nil
 }
 
-// ExtractSource gets the source domain from a SearXNG result.
-// Tries parsed_url first (handles both string-array and object-array formats),
-// then falls back to parsing the URL directly.
-func ExtractSource(r SearXNGResult) string {
-	// Try to extract from parsed_url (format: ["https", "host", "/path", ...])
+// extractSearXNGSource gets the source domain from a searxngResult.
+func extractSearXNGSource(r searxngResult) string {
 	if len(r.ParsedURL) > 0 {
 		var strArr []string
 		if err := json.Unmarshal(r.ParsedURL, &strArr); err == nil && len(strArr) >= 2 {
-			host := strArr[1]
-			if host != "" {
+			if host := strArr[1]; host != "" {
 				return host
 			}
 		}
-		// Try object-array format: [{"scheme":"https","netloc":"host"},...]
 		var objArr []struct {
 			Netloc string `json:"netloc"`
 		}
@@ -195,7 +199,6 @@ func ExtractSource(r SearXNGResult) string {
 			return objArr[0].Netloc
 		}
 	}
-	// Fallback: parse URL
 	if u, err := url.Parse(r.URL); err == nil && u.Hostname() != "" {
 		return u.Hostname()
 	}

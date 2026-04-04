@@ -23,9 +23,9 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "web-search <query>",
-		Short: "Search the web via local SearXNG",
-		Long: `Search the web using a local SearXNG instance (aggregates Google, Bing, DuckDuckGo).
-Zero cost, no API keys, no rate limits.`,
+		Short: "Search the web (DuckDuckGo Lite by default, SearXNG optional)",
+		Long: `Search the web using DuckDuckGo Lite (default, zero dependencies) or a local SearXNG
+instance (opt-in, requires Docker). Zero cost, no API keys.`,
 		Example: `  web-tools web-search "latest AI news"
   web-tools web-search "人工智能最新进展" --locale zh-CN --time-range week
   web-tools web-search "Tesla" --category news --time-range day --limit 10
@@ -41,7 +41,7 @@ Zero cost, no API keys, no rate limits.`,
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "JSON structured output")
 	cmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output to file")
 	cmd.Flags().IntVarP(&flagLimit, "limit", "n", 5, "Number of results")
-	cmd.Flags().StringVar(&flagEngine, "engine", "searxng", "Search engine (only searxng available)")
+	cmd.Flags().StringVar(&flagEngine, "engine", "auto", "Search engine: auto / duckduckgo / searxng")
 	cmd.Flags().StringVar(&flagLocale, "locale", "auto", "Language preference (zh-CN, en-US, auto)")
 	cmd.Flags().StringVar(&flagCat, "category", "general", "Search category: general / images / news / videos / files")
 	cmd.Flags().StringVar(&flagTime, "time-range", "any", "Time range: any / day / week / month / year")
@@ -50,14 +50,6 @@ Zero cost, no API keys, no rate limits.`,
 }
 
 func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) {
-	if flagEngine != "searxng" {
-		apperrors.HandleError(apperrors.NewInputError(
-			"unsupported engine",
-			fmt.Sprintf("engine %q is not supported", flagEngine),
-			[]string{"only searxng is available", "use --engine searxng (default)"},
-		))
-	}
-
 	cfg := config.DefaultConfig()
 	s := search.NewSearch(cfg.Search)
 
@@ -66,6 +58,7 @@ func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngi
 		Locale:    flagLocale,
 		Category:  flagCategory,
 		TimeRange: flagTimeRange,
+		Engine:    flagEngine,
 	}
 
 	resp, err := s.Do(query, opts)

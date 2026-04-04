@@ -22,6 +22,7 @@ type SearchConfig struct {
 	SearXNGURL    string `json:"searxng_url"`
 	DefaultLimit  int    `json:"default_limit"`
 	DefaultLocale string `json:"default_locale"`
+	DefaultEngine string `json:"default_engine"` // "auto" / "duckduckgo" / "searxng"
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -40,6 +41,7 @@ func DefaultConfig() Config {
 			SearXNGURL:    DefaultSearXNGURL,
 			DefaultLimit:  DefaultSearchLimit,
 			DefaultLocale: "auto",
+			DefaultEngine: "auto",
 		},
 	}
 }
