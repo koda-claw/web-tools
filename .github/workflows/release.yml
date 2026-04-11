@@ -26,8 +26,12 @@ jobs:
           mkdir -p dist
           GOOS=darwin  GOARCH=arm64 go build -ldflags "-X main.version=$TAG" -o dist/web-tools-darwin-arm64 .
           GOOS=darwin  GOARCH=amd64 go build -ldflags "-X main.version=$TAG" -o dist/web-tools-darwin-amd64 .
-          GOOS=linux   GOARCH=amd64 go build -ldflags "-X main.version=$TAG" -o dist/web-tools-linux-amd64 .
-          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.version=$TAG" -o dist/web-tools-windows-amd64.exe .
+          GOOS=linux   GOARCH=amd64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-linux-amd64 .
+          GOOS=linux   GOARCH=arm64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-linux-arm64 .
+          GOOS=linux   GOARCH=arm    go build -ldflags "-X main.version=$TAG" -o dist/web-tools-linux-arm .
+          GOOS=windows GOARCH=amd64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-windows-amd64.exe .
+          GOOS=windows GOARCH=arm64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-windows-arm64.exe .
+          GOOS=freebsd GOARCH=amd64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-freebsd-amd64 .
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
