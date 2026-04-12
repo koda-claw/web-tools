@@ -41,7 +41,7 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 	cmd.Flags().BoolVar(&flagJSON, "json", false, "JSON structured output")
 	cmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output to file")
 	cmd.Flags().IntVarP(&flagLimit, "limit", "n", 5, "Number of results")
-	cmd.Flags().StringVar(&flagEngine, "engine", "auto", "Search engine: auto / duckduckgo / searxng")
+	cmd.Flags().StringVar(&flagEngine, "engine", "auto", "Search engine: auto / duckduckgo / searxng / tavily")
 	cmd.Flags().StringVar(&flagLocale, "locale", "auto", "Language preference (zh-CN, en-US, auto)")
 	cmd.Flags().StringVar(&flagCat, "category", "general", "Search category: general / images / news / videos / files")
 	cmd.Flags().StringVar(&flagTime, "time-range", "any", "Time range: any / day / week / month / year")
@@ -50,7 +50,11 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 }
 
 func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) {
-	cfg := config.DefaultConfig()
+	cfg, err := config.Load()
+	if err != nil {
+		cfg2 := config.DefaultConfig()
+		cfg = &cfg2
+	}
 	s := search.NewSearch(cfg.Search)
 
 	opts := search.SearchOptions{
