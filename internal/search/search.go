@@ -22,7 +22,7 @@ type SearchOptions struct {
 	Locale    string // "auto" / "zh-CN" / "en-US"
 	Category  string // "general" / "images" / "news" / "videos" / "files"
 	TimeRange string // "" / "any" / "day" / "week" / "month" / "year"
-	Engine    string // "auto" / "duckduckgo" / "searxng"
+	Engine    string // "auto" / "duckduckgo" / "searxng" / "tavily"
 }
 
 // SearchResult is a single normalized search result.
@@ -47,14 +47,19 @@ type SearchResponse struct {
 }
 
 // NewSearch creates a new Search instance with all supported engines.
-// Engine order determines auto-mode priority: SearXNG first, DDG as fallback.
+// Engine order determines auto-mode priority: Tavily first (if key set), then SearXNG, DDG as fallback.
 func NewSearch(cfg config.SearchConfig) *Search {
+	engines := []Engine{}
+	if cfg.TavilyAPIKey != "" {
+		engines = append(engines, NewTavilyEngine(cfg.TavilyAPIKey))
+	}
+	engines = append(engines,
+		NewSearXNGEngine(cfg.SearXNGURL),
+		NewDuckDuckGoEngine(),
+	)
 	return &Search{
-		engines: []Engine{
-			NewSearXNGEngine(cfg.SearXNGURL),
-			NewDuckDuckGoEngine(),
-		},
-		config: cfg,
+		engines: engines,
+		config:  cfg,
 	}
 }
 
@@ -94,7 +99,7 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			}
 		}
 		if len(candidates) == 0 {
-			return nil, fmt.Errorf("unknown engine %q; supported: auto, duckduckgo, searxng", engineName)
+			return nil, fmt.Errorf("unknown engine %q; supported: auto, duckduckgo, searxng, tavily", engineName)
 		}
 	}
 
