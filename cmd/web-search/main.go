@@ -50,8 +50,15 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 }
 
 func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) {
-	cfg := config.DefaultConfig()
-	s := search.NewSearch(cfg.Search)
+	searchCfg, err := loadSearchConfig()
+	if err != nil {
+		apperrors.HandleError(apperrors.NewInputError(
+			"cannot load configuration",
+			err.Error(),
+			[]string{"check config file format", "check environment variables"},
+		))
+	}
+	s := search.NewSearch(searchCfg)
 
 	opts := search.SearchOptions{
 		Limit:     flagLimit,
@@ -84,4 +91,12 @@ func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngi
 	} else {
 		fmt.Println(output)
 	}
+}
+
+func loadSearchConfig() (config.SearchConfig, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.SearchConfig{}, err
+	}
+	return cfg.Search, nil
 }

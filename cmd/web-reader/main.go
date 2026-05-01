@@ -97,9 +97,13 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	}
 
 	// 2. Load config with flag overrides
-	cfg := config.DefaultConfig()
-	if flagTimeout > 0 {
-		cfg.Reader.DefaultTimeout = flagTimeout
+	cfg, err := loadReaderRuntimeConfig(flagTimeout)
+	if err != nil {
+		apperrors.HandleError(apperrors.NewInputError(
+			"cannot load configuration",
+			err.Error(),
+			[]string{"check config file format", "check environment variables"},
+		))
 	}
 
 	// 3. Initialize cache (URL inputs only)
@@ -131,6 +135,17 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 7. Output
 	outputResult(result, flagJSON, flagOutput, flagMaxWord)
+}
+
+func loadReaderRuntimeConfig(flagTimeout int) (config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.Config{}, err
+	}
+	if flagTimeout > 0 {
+		cfg.Reader.DefaultTimeout = flagTimeout
+	}
+	return *cfg, nil
 }
 
 // isHTTPStatusError checks if the error is an HTTP 4xx/5xx that should NOT trigger browser fallback.

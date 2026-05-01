@@ -236,3 +236,5 @@ Environment variables override config file:
 - `WEB_READER_TIMEOUT` — Default HTTP timeout
 - `WEB_READER_NO_BROWSER` — Disable browser fallback
 - `MARKITDOWN_PATH` — Path to markitdown binary
+
+These overrides are applied by both `web-tools web-search` and `web-tools web-reader` at runtime.
