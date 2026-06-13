@@ -25,6 +25,11 @@ go run . web-reader --help >/dev/null
 echo "[smoke] version"
 go run . --version >/dev/null
 
+echo "[smoke] doctor json"
+go run . doctor --json >"$tmp_dir/doctor.json"
+grep -q '"checks"' "$tmp_dir/doctor.json"
+grep -q '"config"' "$tmp_dir/doctor.json"
+
 echo "[smoke] web-search argument validation"
 if go run . web-search >"$tmp_dir/web-search-empty.out" 2>"$tmp_dir/web-search-empty.err"; then
   echo "expected web-search without query to fail" >&2

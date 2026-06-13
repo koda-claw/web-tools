@@ -445,6 +445,17 @@ Update this section as tasks land.
 | Task 4 | Complete | README, skill docs, and DDG spec now describe the same config, engine, and reader format behavior. |
 | Task 5 | Complete | Added offline `scripts/smoke.sh`; it runs package tests, help/version checks, argument validation, and local text reader verification. |
 
+## Phase 2 Completion Notes
+
+Update this section as tasks land.
+
+| Task | Status | Completion note |
+|------|--------|-----------------|
+| Task 6 | Complete | Added `web-tools doctor` with human and JSON output for config, cache, optional MarkItDown, optional agent-browser, and optional SearXNG checks. Missing optional dependencies warn without failing. Verified with `go test ./cmd/doctor`. |
+| Task 7 | Planned | |
+| Task 8 | Planned | |
+| Task 9 | Planned | |
+
 ## Release Gate
 
 Do not tag a new release until:

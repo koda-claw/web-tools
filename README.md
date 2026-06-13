@@ -79,7 +79,15 @@ web-tools web-reader ./report.pdf
 # Text-only or extracted HTML output
 web-tools web-reader https://example.com/article --format text
 web-tools web-reader https://example.com/article --format html
+
+# Check local setup
+web-tools doctor
+web-tools doctor --json
 ```
+
+## Doctor
+
+Use `web-tools doctor` to check local configuration and optional dependencies. Missing optional tools such as SearXNG, MarkItDown, or agent-browser are reported as warnings; invalid config or an unwritable cache directory is reported as an error.
 
 ## Configuration
 

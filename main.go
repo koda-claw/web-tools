@@ -4,17 +4,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
+	"github.com/koda-claw/web-tools/cmd/doctor"
 	"github.com/koda-claw/web-tools/cmd/web-reader"
 	"github.com/koda-claw/web-tools/cmd/web-search"
+	"github.com/spf13/cobra"
 )
 
 var version = "dev"
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:     "web-tools",
-		Short:   "Local-first web tools for AI agents",
+		Use:   "web-tools",
+		Short: "Local-first web tools for AI agents",
 		Long: `web-tools provides web-search and web-reader as CLI tools, designed for AI agents to consume.
 
 Zero cost. No API keys. No third-party dependencies.`,
@@ -24,10 +25,12 @@ Zero cost. No API keys. No third-party dependencies.`,
   web-tools web-reader https://example.com/article
   web-tools web-reader https://example.com/spa-page --browser
   web-tools web-reader ./report.pdf
-  web-tools web-reader ./slides.pptx -o /tmp/slides.md`,
+  web-tools web-reader ./slides.pptx -o /tmp/slides.md
+  web-tools doctor --json`,
 		Version: version,
 	}
 
+	rootCmd.AddCommand(doctor.Cmd())
 	rootCmd.AddCommand(webreader.Cmd())
 	rootCmd.AddCommand(websearch.Cmd())
 

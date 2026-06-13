@@ -12,6 +12,7 @@ Local-first web search and reading tools for AI agents. Zero cost, no API keys, 
 
 - Need to **search the web** for information → `web-search`
 - Need to **read/extract content** from a URL or file → `web-reader`
+- Need to check local setup or optional dependencies → `doctor`
 - User asks "look this up", "find information about", "search for", "read this article/page"
 - Any task that currently uses `mcp__web_search__web_search_prime` or `mcp__web_reader__webReader` should use these CLIs instead
 
@@ -38,6 +39,20 @@ mv web-tools ~/.local/bin/
 Or download pre-built binaries from [GitHub Releases](https://github.com/koda-claw/web-tools/releases).
 
 This produces a single binary `web-tools` with two subcommands.
+It also includes `web-tools doctor` for local diagnostics.
+
+---
+
+## doctor
+
+Check local configuration and optional dependencies.
+
+```bash
+web-tools doctor
+web-tools doctor --json
+```
+
+`doctor` checks config loading, cache directory access, optional MarkItDown, optional agent-browser, and optional SearXNG reachability. Missing optional dependencies produce warnings rather than hard failures.
 
 ---
 
