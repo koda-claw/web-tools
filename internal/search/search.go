@@ -3,7 +3,10 @@ package search
 import (
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +27,10 @@ type SearchOptions struct {
 	Category  string // "general" / "images" / "news" / "videos" / "files"
 	TimeRange string // "" / "any" / "day" / "week" / "month" / "year"
 	Engine    string // "auto" / "duckduckgo" / "searxng"
+	// IncludeDomains and ExcludeDomains filter normalized result hostnames.
+	// A filter value matches the exact domain and any subdomain.
+	IncludeDomains []string
+	ExcludeDomains []string
 }
 
 // SearchResult is a single normalized search result.
@@ -165,18 +172,7 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 
 	// Normalize results into the public SearchResult type.
-	results := make([]SearchResult, 0, len(rawResults))
-	for i, r := range rawResults {
-		results = append(results, SearchResult{
-			Rank:          i + 1,
-			Title:         r.Title,
-			URL:           r.URL,
-			Snippet:       r.Snippet,
-			Source:        r.Source,
-			Engines:       []string{usedEngine},
-			PublishedDate: r.Extra["published_date"],
-		})
-	}
+	results := normalizeResults(rawResults, usedEngine, opts)
 
 	return &SearchResponse{
 		Query:      query,
@@ -186,6 +182,147 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		Results:    results,
 		SearchedAt: time.Now(),
 	}, nil
+}
+
+func normalizeResults(rawResults []RawResult, engine string, opts SearchOptions) []SearchResult {
+	merged := make([]SearchResult, 0, len(rawResults))
+	seen := make(map[string]int)
+
+	for _, raw := range rawResults {
+		normalizedURL := normalizeResultURL(raw.URL)
+		host := resultHost(normalizedURL)
+		if host == "" {
+			host = normalizeDomain(raw.Source)
+		}
+		if !domainAllowed(host, opts.IncludeDomains, opts.ExcludeDomains) {
+			continue
+		}
+
+		key := normalizedURL
+		if key == "" {
+			key = strings.ToLower(strings.TrimSpace(raw.URL))
+		}
+		if idx, ok := seen[key]; ok {
+			merged[idx].Engines = appendUnique(merged[idx].Engines, engine)
+			continue
+		}
+
+		result := SearchResult{
+			Title:         raw.Title,
+			URL:           normalizedURL,
+			Snippet:       raw.Snippet,
+			Source:        host,
+			Engines:       []string{engine},
+			PublishedDate: raw.Extra["published_date"],
+		}
+		if result.URL == "" {
+			result.URL = raw.URL
+		}
+		if result.Source == "" {
+			result.Source = raw.Source
+		}
+		seen[key] = len(merged)
+		merged = append(merged, result)
+	}
+
+	for i := range merged {
+		merged[i].Rank = i + 1
+	}
+	return merged
+}
+
+func normalizeResultURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Fragment = ""
+	if (u.Scheme == "https" && strings.HasSuffix(u.Host, ":443")) ||
+		(u.Scheme == "http" && strings.HasSuffix(u.Host, ":80")) {
+		host, _, err := net.SplitHostPort(u.Host)
+		if err == nil {
+			u.Host = host
+		}
+	}
+	if u.Path == "/" {
+		u.Path = ""
+	}
+	if u.RawQuery != "" {
+		values := u.Query()
+		keys := make([]string, 0, len(values))
+		for key := range values {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		ordered := url.Values{}
+		for _, key := range keys {
+			vals := append([]string(nil), values[key]...)
+			sort.Strings(vals)
+			for _, val := range vals {
+				ordered.Add(key, val)
+			}
+		}
+		u.RawQuery = ordered.Encode()
+	}
+	return u.String()
+}
+
+func resultHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return normalizeDomain(u.Hostname())
+}
+
+func normalizeDomain(domain string) string {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, "www.")
+	return domain
+}
+
+func domainAllowed(host string, includeDomains []string, excludeDomains []string) bool {
+	host = normalizeDomain(host)
+	if host == "" {
+		return len(includeDomains) == 0
+	}
+	for _, domain := range excludeDomains {
+		if domainMatches(host, domain) {
+			return false
+		}
+	}
+	if len(includeDomains) == 0 {
+		return true
+	}
+	for _, domain := range includeDomains {
+		if domainMatches(host, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+func domainMatches(host string, filter string) bool {
+	filter = normalizeDomain(filter)
+	if filter == "" {
+		return false
+	}
+	return host == filter || strings.HasSuffix(host, "."+filter)
+}
+
+func appendUnique(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 // RenderMarkdown outputs the search response as Markdown.

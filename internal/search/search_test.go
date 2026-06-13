@@ -293,3 +293,75 @@ func TestSearchUnknownEngineError(t *testing.T) {
 	assert.ErrorAs(t, err, &appErr)
 	assert.Contains(t, err.Error(), "unknown search engine")
 }
+
+func TestNormalizeResultURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"lowercase host", "HTTPS://Example.COM/Path", "https://example.com/Path"},
+		{"drop fragment", "https://example.com/path#section", "https://example.com/path"},
+		{"drop root slash", "https://example.com/", "https://example.com"},
+		{"sort query", "https://example.com/path?b=2&a=1", "https://example.com/path?a=1&b=2"},
+		{"keep meaningful query", "https://example.com/path?q=golang", "https://example.com/path?q=golang"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, normalizeResultURL(tt.in))
+		})
+	}
+}
+
+func TestDomainAllowed(t *testing.T) {
+	assert.True(t, domainAllowed("docs.example.com", []string{"example.com"}, nil))
+	assert.True(t, domainAllowed("www.example.com", []string{"example.com"}, nil))
+	assert.False(t, domainAllowed("example.org", []string{"example.com"}, nil))
+	assert.False(t, domainAllowed("docs.example.com", nil, []string{"example.com"}))
+	assert.True(t, domainAllowed("example.org", nil, []string{"example.com"}))
+}
+
+func TestNormalizeResultsFiltersAndDedupes(t *testing.T) {
+	raw := []RawResult{
+		{Title: "A", URL: "https://Example.com/path#top", Snippet: "first", Source: "Example.com"},
+		{Title: "A duplicate", URL: "https://example.com/path", Snippet: "duplicate", Source: "example.com"},
+		{Title: "B", URL: "https://other.com/path", Snippet: "other", Source: "other.com"},
+		{Title: "C", URL: "https://sub.example.com/path", Snippet: "sub", Source: "sub.example.com"},
+	}
+
+	results := normalizeResults(raw, "searxng", SearchOptions{
+		IncludeDomains: []string{"example.com"},
+	})
+
+	require.Len(t, results, 2)
+	assert.Equal(t, 1, results[0].Rank)
+	assert.Equal(t, "https://example.com/path", results[0].URL)
+	assert.Equal(t, "example.com", results[0].Source)
+	assert.Equal(t, []string{"searxng"}, results[0].Engines)
+	assert.Equal(t, 2, results[1].Rank)
+	assert.Equal(t, "sub.example.com", results[1].Source)
+}
+
+func TestNormalizeResultsExcludeDomain(t *testing.T) {
+	raw := []RawResult{
+		{Title: "A", URL: "https://example.com/path", Source: "example.com"},
+		{Title: "B", URL: "https://keep.com/path", Source: "keep.com"},
+	}
+
+	results := normalizeResults(raw, "duckduckgo", SearchOptions{
+		ExcludeDomains: []string{"example.com"},
+	})
+
+	require.Len(t, results, 1)
+	assert.Equal(t, "keep.com", results[0].Source)
+}
+
+func TestAppendUniquePreservesEngineProvenance(t *testing.T) {
+	engines := []string{"searxng"}
+
+	engines = appendUnique(engines, "duckduckgo")
+	engines = appendUnique(engines, "searxng")
+
+	assert.Equal(t, []string{"searxng", "duckduckgo"}, engines)
+}

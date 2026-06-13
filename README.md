@@ -69,6 +69,7 @@ npm i -g agent-browser
 # Search
 web-tools web-search "latest AI news"
 web-tools web-search "人工智能" --locale zh-CN --limit 3
+web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 
 # Read a URL
 web-tools web-reader https://example.com/article

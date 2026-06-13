@@ -452,7 +452,7 @@ Update this section as tasks land.
 | Task | Status | Completion note |
 |------|--------|-----------------|
 | Task 6 | Complete | Added `web-tools doctor` with human and JSON output for config, cache, optional MarkItDown, optional agent-browser, and optional SearXNG checks. Missing optional dependencies warn without failing. Verified with `go test ./cmd/doctor`. |
-| Task 7 | Planned | |
+| Task 7 | Complete | Added search domain include/exclude filters, URL normalization, result deduplication, and engine provenance helper coverage. Verified with `go test ./cmd/web-search ./internal/search`. |
 | Task 8 | Planned | |
 | Task 9 | Planned | |
 

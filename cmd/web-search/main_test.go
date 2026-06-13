@@ -20,7 +20,7 @@ func TestLoadSearchConfig_UsesEnvOverrideForSearXNGURL(t *testing.T) {
 func TestBuildSearchOptions_OmittedFlagsStayZero(t *testing.T) {
 	cmd := Cmd()
 
-	opts := buildSearchOptions(cmd, 5, "auto", "auto", "general", "any")
+	opts := buildSearchOptions(cmd, 5, "auto", "auto", "general", "any", nil, nil)
 
 	assert.Equal(t, search.SearchOptions{}, opts)
 }
@@ -32,12 +32,22 @@ func TestBuildSearchOptions_ExplicitFlagsOverride(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("locale", "en-US"))
 	require.NoError(t, cmd.Flags().Set("category", "news"))
 	require.NoError(t, cmd.Flags().Set("time-range", "week"))
+	require.NoError(t, cmd.Flags().Set("include-domain", "example.com,docs.example.com"))
+	require.NoError(t, cmd.Flags().Set("exclude-domain", "spam.example"))
 
-	opts := buildSearchOptions(cmd, 2, "searxng", "en-US", "news", "week")
+	opts := buildSearchOptions(cmd, 2, "searxng", "en-US", "news", "week", []string{"example.com", "docs.example.com"}, []string{"spam.example"})
 
 	assert.Equal(t, 2, opts.Limit)
 	assert.Equal(t, "searxng", opts.Engine)
 	assert.Equal(t, "en-US", opts.Locale)
 	assert.Equal(t, "news", opts.Category)
 	assert.Equal(t, "week", opts.TimeRange)
+	assert.Equal(t, []string{"example.com", "docs.example.com"}, opts.IncludeDomains)
+	assert.Equal(t, []string{"spam.example"}, opts.ExcludeDomains)
+}
+
+func TestNormalizeDomainFlags(t *testing.T) {
+	got := normalizeDomainFlags([]string{"example.com, docs.example.com", "blog.example.com"})
+
+	assert.Equal(t, []string{"example.com", "docs.example.com", "blog.example.com"}, got)
 }

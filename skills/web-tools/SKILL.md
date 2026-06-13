@@ -77,6 +77,10 @@ web-tools web-search "<query>" [flags]
 | `--category` | string | `general` | Category: `general` / `images` / `news` / `videos` / `files` |
 | `--time-range` | string | `any` | Time filter: `any` / `day` / `week` / `month` / `year` |
 | `--engine` | string | `auto` | Search engine: `auto` / `duckduckgo` / `searxng` |
+| `--include-domain` | string list | — | Only include matching domains; repeat or comma-separate |
+| `--exclude-domain` | string list | — | Exclude matching domains; repeat or comma-separate |
+
+Domain filters match exact domains and subdomains. Search results are normalized and deduplicated by URL before output.
 
 ### Common patterns
 
@@ -92,6 +96,10 @@ web-tools web-search "Tesla" --category news --time-range day
 
 # Write results to file
 web-tools web-search "Go readability library" -o /tmp/search-results.md
+
+# Restrict or exclude domains
+web-tools web-search "Go readability library" --include-domain github.com
+web-tools web-search "AI news" --exclude-domain reddit.com,medium.com
 ```
 
 ### Exit codes
