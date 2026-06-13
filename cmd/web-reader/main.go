@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
 	"github.com/koda-claw/web-tools/internal/reader"
+	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
@@ -40,7 +40,7 @@ Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
   web-tools web-reader ./report.pdf
   web-tools web-reader ./slides.pptx -o /tmp/slides.md
   web-tools web-reader https://example.com/article --no-cache --timeout 30`,
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			run(args[0], flagJSON, flagOutput, flagExtract, flagMaxWord, flagTimeout, flagNoCache, flagBrowser, flagSession, flagUA, flagFormat)
 		},
@@ -59,6 +59,16 @@ Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
 
 	return cmd
 }
+
+const (
+	extractMain = "main"
+	extractFull = "full"
+
+	formatMarkdown = "markdown"
+	formatText     = "text"
+	formatHTML     = "html"
+)
+
 // PipelineResult is the final output structure combining fetch + extract info.
 type PipelineResult struct {
 	Source        string            `json:"source"`
@@ -83,6 +93,10 @@ type PipelineResult struct {
 }
 
 func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, flagMaxWord int, flagTimeout int, flagNoCache bool, flagBrowser bool, flagSession string, flagUA string, flagFormat string) {
+	if err := validateReaderFlags(flagExtract, flagFormat); err != nil {
+		apperrors.HandleError(err)
+	}
+
 	// 1. Parse input
 	input, err := reader.ParseInput(rawInput)
 	if err != nil {
@@ -114,16 +128,16 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 4. Handle file inputs
 	if input.Type == reader.InputFile {
-		result, err := handleFileInput(input, cfg, flagFormat)
+		result, err := handleFileInput(input, cfg, flagExtract, flagFormat)
 		if err != nil {
 			apperrors.HandleError(err)
 		}
-		outputResult(result, flagJSON, flagOutput, flagMaxWord)
+		outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat)
 		return
 	}
 
 	// 5. Handle URL inputs
-	result, err := handleURLInput(input, cfg, flagUA, cache, flagNoCache, flagBrowser, flagSession)
+	result, err := handleURLInput(input, cfg, flagUA, cache, flagNoCache, flagBrowser, flagSession, flagExtract, flagFormat)
 	if err != nil {
 		apperrors.HandleError(err)
 	}
@@ -134,7 +148,31 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	}
 
 	// 7. Output
-	outputResult(result, flagJSON, flagOutput, flagMaxWord)
+	outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat)
+}
+
+func validateReaderFlags(extractMode string, format string) error {
+	switch extractMode {
+	case extractMain, extractFull:
+	default:
+		return apperrors.NewInputError(
+			"unsupported extract mode",
+			fmt.Sprintf("got %q; supported: main, full", extractMode),
+			[]string{"use --extract main", "use --extract full"},
+		)
+	}
+
+	switch format {
+	case formatMarkdown, formatText, formatHTML:
+	default:
+		return apperrors.NewInputError(
+			"unsupported output format",
+			fmt.Sprintf("got %q; supported: markdown, text, html", format),
+			[]string{"use --format markdown", "use --format text", "use --format html"},
+		)
+	}
+
+	return nil
 }
 
 func loadReaderRuntimeConfig(flagTimeout int) (config.Config, error) {
@@ -159,7 +197,7 @@ func isHTTPStatusError(err error) bool {
 	return appErr.Category == "network" || appErr.Category == "unreachable"
 }
 
-func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cache *reader.Cache, noCache bool, useBrowser bool, session string) (*PipelineResult, error) {
+func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cache *reader.Cache, noCache bool, useBrowser bool, session string, extractMode string, format string) (*PipelineResult, error) {
 	// Check cache first
 	if cache != nil && !noCache && !useBrowser {
 		entry, content, hit := cache.Get(input.URL.String())
@@ -173,6 +211,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 				WordCount:   entry.WordCount,
 				ContentType: entry.ContentType,
 				ExtractMode: "cached",
+				Format:      format,
 				CacheHit:    true,
 			}, nil
 		}
@@ -180,7 +219,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 
 	// --browser mode: use agent-browser directly
 	if useBrowser {
-		return handleBrowserInput(input, cfg, session)
+		return handleBrowserInput(input, cfg, session, extractMode, format)
 	}
 
 	// Default: fetch + extract
@@ -198,7 +237,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 		// Network errors (timeout, DNS, connection refused): try browser
 		if cfg.Reader.BrowserFallback {
 			fmt.Fprintf(os.Stderr, "[WARN] HTTP fetch failed (%v), trying browser fallback\n", err)
-			return handleBrowserInput(input, cfg, session)
+			return handleBrowserInput(input, cfg, session, extractMode, format)
 		}
 		return nil, err
 	}
@@ -210,7 +249,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 		// Extraction failure: browser can help with JS-rendered pages
 		if cfg.Reader.BrowserFallback {
 			fmt.Fprintf(os.Stderr, "[WARN] extraction failed (%v), trying browser fallback\n", err)
-			return handleBrowserInput(input, cfg, session)
+			return handleBrowserInput(input, cfg, session, extractMode, format)
 		}
 		return nil, err
 	}
@@ -225,11 +264,11 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 		Content:       extractResult.Content,
 		TextContent:   extractResult.TextContent,
 		HTML:          extractResult.HTML,
-		Format:        flagFormatFromContentType(contentType),
+		Format:        format,
 		FetchedAt:     time.Now(),
 		WordCount:     wordCount,
 		ContentType:   contentType,
-		ExtractMode:   "readability",
+		ExtractMode:   extractModeName("readability", extractMode),
 		Language:      extractResult.Language,
 		PublishedTime: extractResult.PublishedTime,
 		ModifiedTime:  extractResult.ModifiedTime,
@@ -255,7 +294,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 	return result, nil
 }
 
-func handleBrowserInput(input *reader.Input, cfg config.Config, session string) (*PipelineResult, error) {
+func handleBrowserInput(input *reader.Input, cfg config.Config, session string, extractMode string, format string) (*PipelineResult, error) {
 	browser := reader.NewBrowserFallback(cfg.Reader)
 
 	title, content, err := browser.Extract(input.URL.String(), session)
@@ -270,17 +309,19 @@ func handleBrowserInput(input *reader.Input, cfg config.Config, session string) 
 		Source:      input.URL.String(),
 		Title:       title,
 		Content:     content,
+		TextContent: content,
+		Format:      format,
 		FetchedAt:   time.Now(),
 		WordCount:   wordCount,
 		ContentType: reader.GuessContentType(input.URL.String(), "", nil),
-		ExtractMode: "browser",
+		ExtractMode: extractModeName("browser", extractMode),
 		Metadata: map[string]string{
 			"engine": "agent-browser",
 		},
 	}, nil
 }
 
-func handleFileInput(input *reader.Input, cfg config.Config, flagFormat string) (*PipelineResult, error) {
+func handleFileInput(input *reader.Input, cfg config.Config, extractMode string, flagFormat string) (*PipelineResult, error) {
 	data, err := os.ReadFile(input.FilePath)
 	if err != nil {
 		return nil, apperrors.NewInputError(
@@ -295,12 +336,14 @@ func handleFileInput(input *reader.Input, cfg config.Config, flagFormat string) 
 	// Text files: return directly
 	if !input.NeedsConversion() {
 		return &PipelineResult{
-			Source:    input.FilePath,
-			Title:     input.FilePath,
-			Content:   content,
-			FetchedAt: time.Now(),
-			WordCount: len(strings.Fields(content)),
-			Format:    flagFormat,
+			Source:      input.FilePath,
+			Title:       input.FilePath,
+			Content:     content,
+			TextContent: content,
+			FetchedAt:   time.Now(),
+			WordCount:   len(strings.Fields(content)),
+			Format:      flagFormat,
+			ExtractMode: extractModeName("file", extractMode),
 			Metadata: map[string]string{
 				"source_type": "file",
 				"extension":   input.Extension(),
@@ -325,13 +368,14 @@ func handleFileInput(input *reader.Input, cfg config.Config, flagFormat string) 
 	}
 
 	return &PipelineResult{
-		Source:    input.FilePath,
-		Title:     input.FilePath,
-		Content:   converted,
-		FetchedAt: time.Now(),
-		WordCount: len(strings.Fields(converted)),
-		Format:    flagFormat,
-		ExtractMode: "markitdown",
+		Source:      input.FilePath,
+		Title:       input.FilePath,
+		Content:     converted,
+		TextContent: converted,
+		FetchedAt:   time.Now(),
+		WordCount:   len(strings.Fields(converted)),
+		Format:      flagFormat,
+		ExtractMode: extractModeName("markitdown", extractMode),
 		Metadata: map[string]string{
 			"source_type": "file",
 			"extension":   input.Extension(),
@@ -340,20 +384,31 @@ func handleFileInput(input *reader.Input, cfg config.Config, flagFormat string) 
 	}, nil
 }
 
-func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flagMaxWord int) {
+func extractModeName(source string, extractMode string) string {
+	if extractMode == extractFull {
+		return source + "-full"
+	}
+	return source
+}
+
+func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flagMaxWord int, flagFormat string) {
 	if flagMaxWord > 0 {
 		words := strings.Fields(result.Content)
 		if len(words) > flagMaxWord {
 			result.Content = strings.Join(words[:flagMaxWord], " ") + "\n\n... (truncated)"
+			if result.TextContent != "" {
+				textWords := strings.Fields(result.TextContent)
+				if len(textWords) > flagMaxWord {
+					result.TextContent = strings.Join(textWords[:flagMaxWord], " ") + "\n\n... (truncated)"
+				}
+			}
 			result.WordCount = flagMaxWord
 		}
 	}
 
-	var output string
-	if flagJSON {
-		output = result.RenderJSON()
-	} else {
-		output = result.RenderMarkdown()
+	output, err := renderOutput(result, flagJSON, flagFormat)
+	if err != nil {
+		apperrors.HandleError(err)
 	}
 
 	if flagOutput != "" {
@@ -369,14 +424,24 @@ func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flag
 	}
 }
 
-func flagFormatFromContentType(ct string) string {
-	switch ct {
-	case "documentation", "forum", "article":
-		return "markdown"
-	case "video", "social":
-		return "text"
+func renderOutput(result *PipelineResult, asJSON bool, format string) (string, error) {
+	if asJSON {
+		return result.RenderJSON(), nil
+	}
+
+	switch format {
+	case formatMarkdown:
+		return result.RenderMarkdown(), nil
+	case formatText:
+		return result.RenderText(), nil
+	case formatHTML:
+		return result.RenderHTML()
 	default:
-		return "markdown"
+		return "", apperrors.NewInputError(
+			"unsupported output format",
+			fmt.Sprintf("got %q; supported: markdown, text, html", format),
+			[]string{"use --format markdown", "use --format text", "use --format html"},
+		)
 	}
 }
 
@@ -430,6 +495,24 @@ func (r *PipelineResult) RenderMarkdown() string {
 	sb.WriteString("\n")
 
 	return sb.String()
+}
+
+func (r *PipelineResult) RenderText() string {
+	if r.TextContent != "" {
+		return strings.TrimSpace(r.TextContent)
+	}
+	return strings.TrimSpace(r.Content)
+}
+
+func (r *PipelineResult) RenderHTML() (string, error) {
+	if strings.TrimSpace(r.HTML) == "" {
+		return "", apperrors.NewInputError(
+			"HTML output is unavailable for this input",
+			"the input did not produce extracted HTML",
+			[]string{"use --format markdown", "use --format text", "use --json to inspect available fields"},
+		)
+	}
+	return strings.TrimSpace(r.HTML), nil
 }
 
 func (r *PipelineResult) RenderJSON() string {

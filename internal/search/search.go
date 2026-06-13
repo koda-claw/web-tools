@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
 )
 
 // Search is the main entry point for web search.
@@ -69,8 +70,17 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = s.config.DefaultLimit
 	}
+	if opts.Locale == "" {
+		opts.Locale = s.config.DefaultLocale
+	}
+	if opts.Locale == "" {
+		opts.Locale = "auto"
+	}
 	if opts.Category == "" {
 		opts.Category = "general"
+	}
+	if opts.TimeRange == "" {
+		opts.TimeRange = "any"
 	}
 
 	engineName := opts.Engine
@@ -94,14 +104,18 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			}
 		}
 		if len(candidates) == 0 {
-			return nil, fmt.Errorf("unknown engine %q; supported: auto, duckduckgo, searxng", engineName)
+			return nil, apperrors.NewInputError(
+				"unknown search engine",
+				fmt.Sprintf("got %q; supported: auto, duckduckgo, searxng", engineName),
+				[]string{"use --engine auto", "use --engine duckduckgo", "use --engine searxng"},
+			)
 		}
 	}
 
 	var (
-		rawResults []RawResult
-		usedEngine string
-		lastErr    error
+		rawResults  []RawResult
+		usedEngine  string
+		lastErr     error
 		ddgFallback bool
 	)
 
@@ -164,15 +178,10 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		})
 	}
 
-	locale := opts.Locale
-	if locale == "" {
-		locale = "auto"
-	}
-
 	return &SearchResponse{
 		Query:      query,
 		Engine:     usedEngine,
-		Locale:     locale,
+		Locale:     opts.Locale,
 		Total:      len(results),
 		Results:    results,
 		SearchedAt: time.Now(),

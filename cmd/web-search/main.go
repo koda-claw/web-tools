@@ -4,21 +4,21 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
 	"github.com/koda-claw/web-tools/internal/search"
+	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	var (
-		flagJSON    bool
-		flagOutput  string
-		flagLimit   int
-		flagEngine  string
-		flagLocale  string
-		flagCat     string
-		flagTime    string
+		flagJSON   bool
+		flagOutput string
+		flagLimit  int
+		flagEngine string
+		flagLocale string
+		flagCat    string
+		flagTime   string
 	)
 
 	cmd := &cobra.Command{
@@ -34,7 +34,7 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
   web-tools web-search "climate change 2026" --time-range year --json`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			run(args[0], flagJSON, flagOutput, flagLimit, flagEngine, flagLocale, flagCat, flagTime)
+			run(cmd, args[0], flagJSON, flagOutput, flagLimit, flagEngine, flagLocale, flagCat, flagTime)
 		},
 	}
 
@@ -49,7 +49,7 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 	return cmd
 }
 
-func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) {
+func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) {
 	searchCfg, err := loadSearchConfig()
 	if err != nil {
 		apperrors.HandleError(apperrors.NewInputError(
@@ -60,13 +60,7 @@ func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngi
 	}
 	s := search.NewSearch(searchCfg)
 
-	opts := search.SearchOptions{
-		Limit:     flagLimit,
-		Locale:    flagLocale,
-		Category:  flagCategory,
-		TimeRange: flagTimeRange,
-		Engine:    flagEngine,
-	}
+	opts := buildSearchOptions(cmd, flagLimit, flagEngine, flagLocale, flagCategory, flagTimeRange)
 
 	resp, err := s.Do(query, opts)
 	if err != nil {
@@ -91,6 +85,26 @@ func run(query string, flagJSON bool, flagOutput string, flagLimit int, flagEngi
 	} else {
 		fmt.Println(output)
 	}
+}
+
+func buildSearchOptions(cmd *cobra.Command, flagLimit int, flagEngine string, flagLocale string, flagCategory string, flagTimeRange string) search.SearchOptions {
+	var opts search.SearchOptions
+	if cmd.Flags().Changed("limit") {
+		opts.Limit = flagLimit
+	}
+	if cmd.Flags().Changed("engine") {
+		opts.Engine = flagEngine
+	}
+	if cmd.Flags().Changed("locale") {
+		opts.Locale = flagLocale
+	}
+	if cmd.Flags().Changed("category") {
+		opts.Category = flagCategory
+	}
+	if cmd.Flags().Changed("time-range") {
+		opts.TimeRange = flagTimeRange
+	}
+	return opts
 }
 
 func loadSearchConfig() (config.SearchConfig, error) {

@@ -107,7 +107,7 @@ web-tools web-reader <input> [flags]
 |------|------|---------|-------------|
 | `--json` | flag | false | JSON structured output |
 | `-o, --output` | string | stdout | Write output to file |
-| `--extract` | string | `main` | Extract mode: `main` (body text) / `full` (full page) |
+| `--extract` | string | `main` | Extract mode: `main` / `full` (all readability fields) |
 | `--max-words` | int | 0 | Limit output word count (0 = unlimited) |
 | `--timeout` | int | 15 | Request timeout in seconds |
 | `--no-cache` | flag | false | Ignore cache, force re-fetch |
@@ -115,6 +115,12 @@ web-tools web-reader <input> [flags]
 | `--session` | string | — | agent-browser session name (for login state) |
 | `--user-agent` | string | built-in | Custom User-Agent string |
 | `--format` | string | `markdown` | Output format: `markdown` / `text` / `html` |
+
+Format behavior:
+- `markdown`: metadata comments plus extracted content (default)
+- `text`: extracted body text only, with no metadata comments
+- `html`: extracted HTML only when available; plain text and converted local files return a structured input error
+- `--json`: stable JSON envelope with all available fields; `--format` only controls non-JSON rendering
 
 ### Input type detection
 
@@ -225,7 +231,8 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
   "search": {
     "searxng_url": "http://localhost:8888",
     "default_limit": 5,
-    "default_locale": "auto"
+    "default_locale": "auto",
+    "default_engine": "auto"
   }
 }
 ```

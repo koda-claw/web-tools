@@ -152,15 +152,24 @@ type mockEngine struct {
 	healthErr   error
 	queryErr    error
 	queryResult []RawResult
+	lastOpts    SearchOptions
 }
 
-func (m *mockEngine) Name() string { return m.name }
+func (m *mockEngine) Name() string       { return m.name }
 func (m *mockEngine) HealthCheck() error { return m.healthErr }
-func (m *mockEngine) Query(_ string, _ SearchOptions) ([]RawResult, error) {
+func (m *mockEngine) Query(_ string, opts SearchOptions) ([]RawResult, error) {
+	m.lastOpts = opts
 	if m.queryErr != nil {
 		return nil, m.queryErr
 	}
 	return m.queryResult, nil
+}
+
+func makeConfiguredTestSearch(cfg config.SearchConfig, engines ...Engine) *Search {
+	return &Search{
+		engines: engines,
+		config:  cfg,
+	}
 }
 
 func makeTestSearch(engines ...Engine) *Search {
@@ -218,4 +227,69 @@ func TestSpecificEngine_SearXNG(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "searxng", resp.Engine)
 	assert.Equal(t, "SearXNG Result", resp.Results[0].Title)
+}
+
+func TestSearchDefaultsFromConfig(t *testing.T) {
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeConfiguredTestSearch(config.SearchConfig{
+		DefaultLimit:  7,
+		DefaultLocale: "zh-CN",
+		DefaultEngine: "duckduckgo",
+	}, &mockEngine{name: "searxng", healthErr: errors.New("should not be called")}, ddg)
+
+	resp, err := s.Do("test", SearchOptions{})
+	require.NoError(t, err)
+
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Equal(t, "zh-CN", resp.Locale)
+	assert.Equal(t, 7, ddg.lastOpts.Limit)
+	assert.Equal(t, "zh-CN", ddg.lastOpts.Locale)
+	assert.Equal(t, "general", ddg.lastOpts.Category)
+	assert.Equal(t, "any", ddg.lastOpts.TimeRange)
+}
+
+func TestSearchExplicitOptionsOverrideConfig(t *testing.T) {
+	sx := &mockEngine{
+		name: "searxng",
+		queryResult: []RawResult{
+			{Title: "SearXNG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeConfiguredTestSearch(config.SearchConfig{
+		DefaultLimit:  7,
+		DefaultLocale: "zh-CN",
+		DefaultEngine: "duckduckgo",
+	}, sx, &mockEngine{name: "duckduckgo", healthErr: errors.New("should not be called")})
+
+	resp, err := s.Do("test", SearchOptions{
+		Limit:     2,
+		Locale:    "en-US",
+		Category:  "news",
+		TimeRange: "week",
+		Engine:    "searxng",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "searxng", resp.Engine)
+	assert.Equal(t, "en-US", resp.Locale)
+	assert.Equal(t, 2, sx.lastOpts.Limit)
+	assert.Equal(t, "en-US", sx.lastOpts.Locale)
+	assert.Equal(t, "news", sx.lastOpts.Category)
+	assert.Equal(t, "week", sx.lastOpts.TimeRange)
+}
+
+func TestSearchUnknownEngineError(t *testing.T) {
+	s := makeTestSearch(&mockEngine{name: "duckduckgo"})
+
+	_, err := s.Do("test", SearchOptions{Engine: "invalid"})
+
+	require.Error(t, err)
+	var appErr interface{ ExitCode() int }
+	assert.ErrorAs(t, err, &appErr)
+	assert.Contains(t, err.Error(), "unknown search engine")
 }

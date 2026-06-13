@@ -1,5 +1,14 @@
 # Spec: DuckDuckGo Lite 作为默认搜索引擎 + SearXNG 作为高级选项
 
+## 状态
+
+已在主线落地。后续 Phase 1 完善项补齐了配置与 CLI 合约：
+
+- `search.default_engine`、`search.default_limit`、`search.default_locale` 可从配置文件生效。
+- CLI flag 仅在显式传入时覆盖配置默认值。
+- `reader.browser_fallback=false` 可在 JSON 配置中显式关闭。
+- `web-reader --format` 明确支持 `markdown` / `text` / `html`；其中 `html` 仅在已提取到 HTML 时可用。
+
 ## 背景
 
 当前 web-search 强依赖 SearXNG Docker 容器（localhost:8888），社区用户没有 Docker 环境就无法使用搜索功能。需要让搜索开箱即用。
@@ -104,9 +113,9 @@ type SearchConfig struct {
 - 新增 auto 模式行为说明
 - 新增 DuckDuckGo 已知限制
 
-## 不改的东西
+## 原方案不改的东西
 
-- `web-reader` 完全不受影响
+- DDG 默认搜索方案本身不要求改动 `web-reader`
 - `SearchResult` 和 `SearchResponse` 公开类型不变（下游消费者无需改动）
 - `RenderMarkdown` / `RenderJSON` 不变
 - error 处理框架不变

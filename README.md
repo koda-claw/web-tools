@@ -6,7 +6,7 @@ Zero cost. No API keys. No third-party dependencies.
 
 ## What it does
 
-- **web-search**: Search the web via a local SearXNG instance (aggregates Google, Bing, DuckDuckGo)
+- **web-search**: Search the web via DuckDuckGo Lite by default, with optional local SearXNG
 - **web-reader**: Extract readable content from URLs or convert local files (PDF, DOCX, PPTX, XLSX) to Markdown
 
 ## Install
@@ -41,7 +41,11 @@ go build -o web-tools .
 
 ## Quick start
 
-### 1. Start SearXNG (required for web-search)
+### 1. Search works out of the box
+
+`web-search` uses DuckDuckGo Lite by default and does not require Docker or API keys.
+
+SearXNG is optional for higher throughput and more sources:
 
 ```bash
 cd docker && docker compose up -d
@@ -49,7 +53,7 @@ cd docker && docker compose up -d
 
 Verify: `curl -s http://localhost:8888/search?q=test&format=json | head -c 200`
 
-### 2. Install optional dependencies
+### 2. Install optional reader dependencies
 
 ```bash
 # For file conversion (PDF, DOCX, PPTX, XLSX)
@@ -71,7 +75,36 @@ web-tools web-reader https://example.com/article
 
 # Convert a file
 web-tools web-reader ./report.pdf
+
+# Text-only or extracted HTML output
+web-tools web-reader https://example.com/article --format text
+web-tools web-reader https://example.com/article --format html
 ```
+
+## Configuration
+
+Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
+
+```json
+{
+  "reader": {
+    "cache_dir": "~/.cache/web-tools",
+    "cache_ttl": 300,
+    "default_timeout": 15,
+    "browser_fallback": true,
+    "markitdown_path": "markitdown",
+    "agent_browser_path": "agent-browser"
+  },
+  "search": {
+    "searxng_url": "http://localhost:8888",
+    "default_limit": 5,
+    "default_locale": "auto",
+    "default_engine": "auto"
+  }
+}
+```
+
+CLI flags override config defaults when provided. `--format=html` is only available when extraction produced HTML; plain text and converted local files return a structured input error instead of generated wrapper HTML.
 
 ## Install as Agent Skill
 
