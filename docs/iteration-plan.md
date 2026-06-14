@@ -808,3 +808,22 @@ Phase 4 从“能用”转向“好用”，优先补齐 Agent 安装、配置�
 - 只有 CLI binary 时也能初始化 skill。
 - 已存在 skill 时默认拒绝覆盖，`--force` 可更新。
 - Skill 文档指导 Agent 用 CLI 配置 provider，而不是手写 JSON。
+
+## Phase 5: Setup / Env File / Interactive 版本化迭代
+
+Phase 5 继续把 setup 从“命令式可用”推进到“用户和 Agent 都好用”。详细计划见 `docs/setup-env-iteration-plan.md`。
+
+推荐版本顺序：
+
+| Version | Scope | 目标 |
+|---------|-------|------|
+| v1.4.2 | Env file 自动加载 + setup 写 env file | 支持 `~/.config/web-tools/.env`，让用户配置一次后 CLI 直接可用。 |
+| v1.4.3 | setup check / repair 建议 | 让用户和 Agent 能看到当前缺什么、下一步命令是什么。 |
+| v1.5.0 | setup --interactive | 给人类首次本地配置提供交互式引导；Agent 仍默认走非交互命令。 |
+
+Phase 5 的安全边界：
+
+- `config.json` 只保存 `auth_env`，不保存真实 API key。
+- 默认加载 `~/.config/web-tools/.env`，不默认加载当前目录 `.env`。
+- 当前进程环境变量优先级最高。
+- Skill 默认指导 Agent 使用非交互命令，不默认使用 `--interactive`。
