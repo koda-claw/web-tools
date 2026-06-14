@@ -88,8 +88,17 @@ type PipelineResult struct {
 	SiteName      string            `json:"site_name,omitempty"`
 	Image         string            `json:"image,omitempty"`
 	NeedsFallback bool              `json:"needs_fallback,omitempty"`
+	Quality       *QualityInfo      `json:"quality,omitempty"`
 	CacheHit      bool              `json:"cache_hit,omitempty"`
 	Metadata      map[string]string `json:"metadata,omitempty"`
+}
+
+type QualityInfo struct {
+	Score         string   `json:"score"`
+	WordCount     int      `json:"word_count"`
+	MinWords      int      `json:"min_words"`
+	NeedsFallback bool     `json:"needs_fallback"`
+	Reasons       []string `json:"reasons,omitempty"`
 }
 
 func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, flagMaxWord int, flagTimeout int, flagNoCache bool, flagBrowser bool, flagSession string, flagUA string, flagFormat string) {
@@ -144,7 +153,12 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 6. Check extraction quality
 	if result.NeedsFallback {
-		fmt.Fprintln(os.Stderr, "[WARN] extracted content seems sparse, try --browser for JS-rendered pages")
+		if result.Quality != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] extracted content quality is %s (%s); try --browser for JS-rendered pages\n",
+				result.Quality.Score, strings.Join(result.Quality.Reasons, ", "))
+		} else {
+			fmt.Fprintln(os.Stderr, "[WARN] extracted content seems sparse, try --browser for JS-rendered pages")
+		}
 	}
 
 	// 7. Output
@@ -213,6 +227,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 				ExtractMode: "cached",
 				Format:      format,
 				CacheHit:    true,
+				Quality:     assessQuality(entry.WordCount, cfg.Reader.MinContentLength, "cache"),
 			}, nil
 		}
 	}
@@ -257,6 +272,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 	contentType := reader.GuessContentType(input.URL.String(), extractResult.SiteName, extractResult.Metadata)
 	wordCount := len(strings.Fields(extractResult.TextContent))
 
+	quality := assessQuality(wordCount, cfg.Reader.MinContentLength, "readability")
 	result := &PipelineResult{
 		Source:        input.URL.String(),
 		URL:           fetchResult.URL,
@@ -275,7 +291,8 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 		SiteName:      extractResult.SiteName,
 		Image:         extractResult.Image,
 		Metadata:      extractResult.Metadata,
-		NeedsFallback: extractor.NeedsFallback(extractResult),
+		NeedsFallback: quality.NeedsFallback,
+		Quality:       quality,
 	}
 
 	if cache != nil {
@@ -304,6 +321,7 @@ func handleBrowserInput(input *reader.Input, cfg config.Config, session string, 
 	defer browser.Close(session)
 
 	wordCount := len(strings.Fields(content))
+	quality := assessQuality(wordCount, cfg.Reader.MinContentLength, "browser")
 
 	return &PipelineResult{
 		Source:      input.URL.String(),
@@ -315,6 +333,7 @@ func handleBrowserInput(input *reader.Input, cfg config.Config, session string, 
 		WordCount:   wordCount,
 		ContentType: reader.GuessContentType(input.URL.String(), "", nil),
 		ExtractMode: extractModeName("browser", extractMode),
+		Quality:     quality,
 		Metadata: map[string]string{
 			"engine": "agent-browser",
 		},
@@ -344,6 +363,7 @@ func handleFileInput(input *reader.Input, cfg config.Config, extractMode string,
 			WordCount:   len(strings.Fields(content)),
 			Format:      flagFormat,
 			ExtractMode: extractModeName("file", extractMode),
+			Quality:     assessQuality(len(strings.Fields(content)), cfg.Reader.MinContentLength, "file"),
 			Metadata: map[string]string{
 				"source_type": "file",
 				"extension":   input.Extension(),
@@ -376,12 +396,38 @@ func handleFileInput(input *reader.Input, cfg config.Config, extractMode string,
 		WordCount:   len(strings.Fields(converted)),
 		Format:      flagFormat,
 		ExtractMode: extractModeName("markitdown", extractMode),
+		Quality:     assessQuality(len(strings.Fields(converted)), cfg.Reader.MinContentLength, "markitdown"),
 		Metadata: map[string]string{
 			"source_type": "file",
 			"extension":   input.Extension(),
 			"converter":   "markitdown",
 		},
 	}, nil
+}
+
+func assessQuality(wordCount int, minWords int, mode string) *QualityInfo {
+	if minWords <= 0 {
+		minWords = config.DefaultMinContentLength
+	}
+	q := &QualityInfo{
+		Score:         "high",
+		WordCount:     wordCount,
+		MinWords:      minWords,
+		NeedsFallback: false,
+	}
+	if wordCount == 0 {
+		q.Score = "empty"
+		q.NeedsFallback = true
+		q.Reasons = append(q.Reasons, "empty content")
+	} else if wordCount < minWords {
+		q.Score = "low"
+		q.NeedsFallback = true
+		q.Reasons = append(q.Reasons, fmt.Sprintf("word count %d below minimum %d", wordCount, minWords))
+	}
+	if mode != "" {
+		q.Reasons = append(q.Reasons, "mode: "+mode)
+	}
+	return q
 }
 
 func extractModeName(source string, extractMode string) string {
@@ -475,6 +521,12 @@ func (r *PipelineResult) RenderMarkdown() string {
 	}
 	if r.CacheHit {
 		sb.WriteString("<!-- cache: hit -->\n")
+	}
+	if r.Quality != nil {
+		sb.WriteString(fmt.Sprintf("<!-- quality: %s -->\n", r.Quality.Score))
+		if r.Quality.NeedsFallback {
+			sb.WriteString("<!-- needs_fallback: true -->\n")
+		}
 	}
 	sb.WriteString("\n")
 

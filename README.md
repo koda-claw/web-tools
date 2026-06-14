@@ -115,6 +115,8 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
 
 CLI flags override config defaults when provided. `--format=html` is only available when extraction produced HTML; plain text and converted local files return a structured input error instead of generated wrapper HTML.
 
+`web-reader --json` includes a `quality` object with extraction score, word count, minimum word threshold, fallback recommendation, and reasons. Sparse extraction warnings are written to stderr so stdout remains machine-consumable.
+
 ## Install as Agent Skill
 
 Compatible with [vercel-labs/skills](https://github.com/vercel-labs/skills) CLI:

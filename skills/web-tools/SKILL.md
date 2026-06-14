@@ -145,6 +145,11 @@ Format behavior:
 - `html`: extracted HTML only when available; plain text and converted local files return a structured input error
 - `--json`: stable JSON envelope with all available fields; `--format` only controls non-JSON rendering
 
+Reader quality:
+- JSON output includes `quality.score`, `quality.word_count`, `quality.min_words`, `quality.needs_fallback`, and `quality.reasons`
+- Sparse extraction warnings are written to stderr, not stdout
+- HTTP 4xx/5xx responses do not trigger browser fallback; browser fallback is for network/extraction failures and explicit `--browser`
+
 ### Input type detection
 
 | Input | Type | Processing |

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
 	"github.com/koda-claw/web-tools/internal/reader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,11 +70,13 @@ func TestPipelineResultRenderers(t *testing.T) {
 		WordCount:   2,
 		ContentType: "article",
 		ExtractMode: "readability",
+		Quality:     &QualityInfo{Score: "high", WordCount: 2, MinWords: 1},
 	}
 
 	md, err := renderOutput(result, false, "markdown")
 	require.NoError(t, err)
 	assert.Contains(t, md, "<!-- source: https://example.com/article -->")
+	assert.Contains(t, md, "<!-- quality: high -->")
 	assert.Contains(t, md, "Markdown **body**")
 
 	text, err := renderOutput(result, false, "text")
@@ -90,11 +93,14 @@ func TestPipelineResultRenderers(t *testing.T) {
 
 	var parsed struct {
 		Result struct {
-			HTML string `json:"html"`
+			HTML    string       `json:"html"`
+			Quality *QualityInfo `json:"quality"`
 		} `json:"result"`
 	}
 	require.NoError(t, jsonpkg.Unmarshal([]byte(json), &parsed))
 	assert.Equal(t, "<article><p>HTML body</p></article>", parsed.Result.HTML)
+	require.NotNil(t, parsed.Result.Quality)
+	assert.Equal(t, "high", parsed.Result.Quality.Score)
 }
 
 func TestPipelineResultRenderTextFallsBackToContent(t *testing.T) {
@@ -133,4 +139,43 @@ func TestHandleFileInputTextFormat(t *testing.T) {
 	assert.Equal(t, strings.TrimSpace(content), output)
 	assert.Equal(t, "text", result.Format)
 	assert.Equal(t, "file", result.ExtractMode)
+	require.NotNil(t, result.Quality)
+	assert.Equal(t, "low", result.Quality.Score)
+}
+
+func TestAssessQuality(t *testing.T) {
+	high := assessQuality(100, 50, "readability")
+	assert.Equal(t, "high", high.Score)
+	assert.False(t, high.NeedsFallback)
+
+	low := assessQuality(10, 50, "readability")
+	assert.Equal(t, "low", low.Score)
+	assert.True(t, low.NeedsFallback)
+	assert.Contains(t, low.Reasons[0], "below minimum")
+
+	empty := assessQuality(0, 50, "readability")
+	assert.Equal(t, "empty", empty.Score)
+	assert.True(t, empty.NeedsFallback)
+}
+
+func TestIsHTTPStatusError(t *testing.T) {
+	assert.True(t, isHTTPStatusError(apperrors.NewNetworkError(
+		"HTTP request returned error status",
+		"HTTP 403",
+		map[string]string{"status_code": "403"},
+		nil,
+	)))
+	assert.True(t, isHTTPStatusError(apperrors.NewUnreachableError(
+		"page not found",
+		"HTTP 404",
+		map[string]string{"status_code": "404"},
+		nil,
+	)))
+	assert.False(t, isHTTPStatusError(apperrors.NewExtractError(
+		"readability failed",
+		"no article",
+		nil,
+		nil,
+		nil,
+	)))
 }
