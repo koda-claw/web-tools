@@ -1,5 +1,7 @@
 # web-tools
 
+[中文文档](README.zh-CN.md)
+
 Local-first web search and reading CLI for AI agents.
 
 Zero cost by default. No API keys required for the local-first path.
