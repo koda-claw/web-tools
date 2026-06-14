@@ -22,6 +22,12 @@ go run . web-search --help >/dev/null
 echo "[smoke] web-reader help"
 go run . web-reader --help >/dev/null
 
+echo "[smoke] config help"
+go run . config --help >/dev/null
+
+echo "[smoke] skill help"
+go run . skill --help >/dev/null
+
 echo "[smoke] version"
 go run . --version >/dev/null
 
@@ -46,5 +52,24 @@ if grep -q "<!-- source:" "$tmp_dir/note.out"; then
   echo "expected text format to omit metadata comments" >&2
   exit 1
 fi
+
+echo "[smoke] config provider add"
+go run . config provider add bigmodel \
+  --preset bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-search-auto \
+  --config "$tmp_dir/config.json" \
+  --json >"$tmp_dir/config-provider-add.json"
+grep -q '"provider": "bigmodel"' "$tmp_dir/config-provider-add.json"
+grep -q '"bigmodel"' "$tmp_dir/config.json"
+grep -q '"auth_env": "ZHIPU_APIKEY"' "$tmp_dir/config.json"
+
+echo "[smoke] skill install from source"
+go run . skill install \
+  --dir "$tmp_dir/skills" \
+  --source ./skills/web-tools/SKILL.md \
+  --json >"$tmp_dir/skill-install.json"
+grep -q '"ok": true' "$tmp_dir/skill-install.json"
+test -f "$tmp_dir/skills/web-tools/SKILL.md"
 
 echo "[smoke] ok"

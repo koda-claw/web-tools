@@ -16,7 +16,7 @@ Zero cost by default. No API keys required for the local-first path.
 If another agent only has this repository URL, have it follow this order:
 
 1. Install the `web-tools` CLI binary or build it from source.
-2. Install the `skills/web-tools` skill folder into its local skills directory.
+2. Install the Agent skill with `web-tools skill install`, or copy `skills/web-tools` from a source checkout.
 3. Run `web-tools doctor --json` and fix only hard errors. Missing optional dependencies are warnings.
 4. Use `web-tools web-search "<query>" --json` to find candidate sources.
 5. Use `web-tools web-reader "<url>" --json` to read selected pages.
@@ -71,6 +71,12 @@ web-tools --version
 web-tools doctor --json
 ```
 
+If you installed only the CLI binary, initialize the Agent skill from the CLI:
+
+```bash
+web-tools skill install
+```
+
 ## Quick start
 
 ### 1. Search works out of the box
@@ -118,6 +124,9 @@ web-tools web-reader https://example.com/article --format html
 # Check local setup
 web-tools doctor
 web-tools doctor --json
+
+# Install/update the Agent skill from the CLI
+web-tools skill install --force
 ```
 
 ## Test
@@ -181,6 +190,26 @@ reader auto: builtin-reader
 
 Optional MCP providers can be enabled through config. For BigModel/Zhipu:
 
+```bash
+web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+export ZHIPU_APIKEY=...
+web-tools doctor --json
+web-tools web-search "Go readability library" --provider bigmodel --json
+web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
+```
+
+To include BigModel in `--provider auto` search fallback:
+
+```bash
+web-tools config provider add bigmodel \
+  --preset bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-search-auto
+```
+
+The command writes `~/.config/web-tools/config.json` by default and stores only
+the environment variable name, not the token value. Equivalent JSON:
+
 ```json
 {
   "providers": {
@@ -206,15 +235,6 @@ Optional MCP providers can be enabled through config. For BigModel/Zhipu:
 }
 ```
 
-Then run:
-
-```bash
-export ZHIPU_APIKEY=...
-web-tools doctor --json
-web-tools web-search "Go readability library" --provider bigmodel --json
-web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
-```
-
 Secrets are read only from environment variables. `doctor --json` reports whether auth is configured, but never prints the token value.
 
 ## Install as Agent Skill
@@ -230,6 +250,9 @@ This installs the SKILL.md to your agent's skills directory, enabling AI agents 
 Manual skill installation is also supported. Copy the repository skill folder:
 
 ```bash
+# From an installed CLI binary
+web-tools skill install --dir "$HOME/.codex/skills"
+
 # Codex-style local skill directory
 mkdir -p "$HOME/.codex/skills"
 cp -R skills/web-tools "$HOME/.codex/skills/"

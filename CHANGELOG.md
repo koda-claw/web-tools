@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `web-tools config provider add/list` for CLI-managed provider configuration.
+- `web-tools skill install` so a downloaded CLI binary can initialize or update the Agent skill.
+
+### Improved
+
+- Agent skill guidance now prefers CLI-managed provider setup over hand-written JSON.
+
 ## v1.4.0 - 2026-06-14
 
 Feature release for provider/plugin architecture and MCP-backed search/read providers.

@@ -35,9 +35,16 @@ web-tools --version
 web-tools doctor --json
 ```
 
-For agents that only have the repository URL, copy `skills/web-tools` into the
-agent's local skills directory, then rely on this skill for the search/read
-workflow.
+If the CLI binary is installed but this skill is missing or stale, install it
+from the CLI:
+
+```bash
+web-tools skill install --force
+```
+
+For agents that only have the repository URL, either run `web-tools skill
+install` after installing the binary, or copy `skills/web-tools` from the source
+checkout into the agent's local skills directory.
 
 ## Prerequisites
 
@@ -369,25 +376,10 @@ These overrides are applied by both `web-tools web-search` and `web-tools web-re
 The built-in path does not require API keys. Optional remote providers must be
 configured explicitly and should read secrets only from environment variables.
 
-```json
-{
-  "providers": {
-    "bigmodel": {
-      "type": "mcp",
-      "auth_env": "ZHIPU_APIKEY",
-      "enabled_if_env": "ZHIPU_APIKEY",
-      "capabilities": ["search", "reader"],
-      "search": {
-        "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
-        "tool": "web_search_prime"
-      },
-      "reader": {
-        "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
-        "tool": "webReader"
-      }
-    }
-  }
-}
+Prefer the CLI config command instead of hand-writing JSON:
+
+```bash
+web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
 ```
 
 ```bash
@@ -396,6 +388,19 @@ web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
 web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
 ```
+
+If the user wants `--provider auto` to try BigModel for search fallback, add it
+to the search chain explicitly:
+
+```bash
+web-tools config provider add bigmodel \
+  --preset bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-search-auto
+```
+
+Do not put the API key itself in config. Store only the env var name in
+`auth_env`, then rely on `doctor --json` to confirm `auth_configured=true`.
 
 Do not parse raw MCP responses in the agent. The CLI normalizes MCP responses
 into the regular `web-search --json` and `web-reader --json` envelopes.

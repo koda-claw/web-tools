@@ -772,3 +772,39 @@ Update this section as tasks land.
 | Task 15 | Complete | Added `internal/provider/mcp` Streamable HTTP adapter with SSE parsing, JSON-RPC handling, double-encoded `content[0].text` parsing, mock MCP tests, and error redaction checks. Verified with `go test ./internal/provider/mcp`. |
 | Task 16 | Complete | Added BigModel/Zhipu MCP config docs using `ZHIPU_APIKEY`, README and skill guidance, and live smoke verification for search/read via `--provider bigmodel`. Verified with `go test ./...` and explicit live smoke. |
 | Post-Task 16 | Complete | Added `docs/provider-plugin-development-guide.md`, linked it from README, added Mermaid architecture/flow diagrams, and prepared v1.4.0 release notes. Verified with `go test ./...`, `go vet ./...`, `./scripts/smoke.sh`, and `git diff --check`. |
+
+## Phase 4: Agent 易用性迭代
+
+Phase 4 从“能用”转向“好用”，优先补齐 Agent 安装、配置和自检闭环。
+
+### Task 17: CLI 管理 Provider 配置
+
+**目标**
+
+- 新增 `web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY`。
+- 新增 `web-tools config provider list`。
+- 默认写入 `~/.config/web-tools/config.json`，支持 `--config` 指定路径。
+- 只写 `auth_env` 名称，不写真实 token。
+- 支持 `--enable-search-auto` 显式把 BigModel 加入 search fallback chain。
+
+**验收标准**
+
+- Agent 不需要手写 JSON 即可配置 BigModel provider。
+- 配置命令幂等；重复执行不会产生重复 chain。
+- `doctor --json` 能看到 provider 状态。
+- 缺少 `ZHIPU_APIKEY` 时 provider 为 warn，不破坏默认无 key 路径。
+
+### Task 18: CLI 初始化 Agent Skill
+
+**目标**
+
+- 新增 `web-tools skill install`。
+- 默认安装到 `~/.codex/skills/web-tools/SKILL.md`。
+- release binary 默认从 GitHub 对应 tag 下载 skill；dev build 默认从 `main` 下载。
+- 支持 `--source ./skills/web-tools/SKILL.md` 便于源码 checkout 离线安装。
+
+**验收标准**
+
+- 只有 CLI binary 时也能初始化 skill。
+- 已存在 skill 时默认拒绝覆盖，`--force` 可更新。
+- Skill 文档指导 Agent 用 CLI 配置 provider，而不是手写 JSON。

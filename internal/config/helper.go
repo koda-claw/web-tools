@@ -23,3 +23,13 @@ func FindExecutable(name string) string {
 	}
 	return path
 }
+
+// ExpandHome expands a leading ~/ in user-facing paths.
+func ExpandHome(path string) string {
+	return expandHome(path)
+}
+
+// UserConfigPath returns the default user config file path.
+func UserConfigPath() string {
+	return expandHome("~/.config/web-tools/config.json")
+}

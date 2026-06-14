@@ -214,6 +214,51 @@ func TestCLIIntegrationReaderSparseQualityWarning(t *testing.T) {
 	assert.True(t, envelope.Result.Quality.NeedsFallback)
 }
 
+func TestCLIIntegrationConfigProviderAndSkillInstall(t *testing.T) {
+	bin := buildCLITestBinary(t)
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	skillRoot := filepath.Join(dir, "skills")
+
+	configStdout, configStderr := runCLI(t, bin, []string{
+		"config", "provider", "add", "bigmodel",
+		"--preset", "bigmodel",
+		"--auth-env", "ZHIPU_APIKEY",
+		"--enable-search-auto",
+		"--config", configPath,
+		"--json",
+	}, nil)
+	assert.Empty(t, configStderr)
+	assert.Contains(t, configStdout, `"provider": "bigmodel"`)
+
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"auth_env": "ZHIPU_APIKEY"`)
+	assert.Contains(t, string(data), `"default_provider_chain"`)
+	assert.NotContains(t, string(data), "Bearer")
+
+	doctorStdout, doctorStderr := runCLI(t, bin, []string{
+		"doctor", "--json",
+	}, map[string]string{"WEB_TOOLS_CONFIG": configPath})
+	assert.Empty(t, doctorStderr)
+	assert.Contains(t, doctorStdout, `"provider.bigmodel"`)
+	assert.Contains(t, doctorStdout, `"auth_configured": "false"`)
+
+	skillStdout, skillStderr := runCLI(t, bin, []string{
+		"skill", "install",
+		"--dir", skillRoot,
+		"--source", "skills/web-tools/SKILL.md",
+		"--json",
+	}, nil)
+	assert.Empty(t, skillStderr)
+	assert.Contains(t, skillStdout, `"ok": true`)
+
+	skillData, err := os.ReadFile(filepath.Join(skillRoot, "web-tools", "SKILL.md"))
+	require.NoError(t, err)
+	assert.Contains(t, string(skillData), "name: web-tools")
+	assert.Contains(t, string(skillData), "web-tools config provider add bigmodel")
+}
+
 func buildCLITestBinary(t *testing.T) string {
 	t.Helper()
 

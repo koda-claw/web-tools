@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 
+	configcmd "github.com/koda-claw/web-tools/cmd/config"
 	"github.com/koda-claw/web-tools/cmd/doctor"
+	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
 	"github.com/koda-claw/web-tools/cmd/web-reader"
 	"github.com/koda-claw/web-tools/cmd/web-search"
 	"github.com/spf13/cobra"
@@ -26,11 +28,15 @@ Zero cost. No API keys. No third-party dependencies.`,
   web-tools web-reader https://example.com/spa-page --browser
   web-tools web-reader ./report.pdf
   web-tools web-reader ./slides.pptx -o /tmp/slides.md
+  web-tools config provider add bigmodel --preset bigmodel
+  web-tools skill install
   web-tools doctor --json`,
 		Version: version,
 	}
 
+	rootCmd.AddCommand(configcmd.Cmd())
 	rootCmd.AddCommand(doctor.Cmd())
+	rootCmd.AddCommand(skillcmd.Cmd(version))
 	rootCmd.AddCommand(webreader.Cmd())
 	rootCmd.AddCommand(websearch.Cmd())
 
