@@ -1,7 +1,7 @@
 ---
 name: web-tools
 description: Local-first web search and reading CLI for AI agents. Zero cost, no API keys. Use this skill whenever the user asks to search the web, find information online, read an article or webpage, extract content from a URL, or convert files (PDF, DOCX, PPTX, XLSX) to Markdown. Trigger on phrases like "search for", "look up", "find information", "read this article", "what does this page say", "search the web", "google this", or any task that needs web information retrieval.
-allowed-tools: Bash(web-tools web-search:*), Bash(web-tools web-reader:*), Bash(docker compose:*)
+allowed-tools: Bash(web-tools:*), Bash(command -v:*), Bash(go version:*), Bash(go build:*), Bash(git clone:*), Bash(curl:*), Bash(chmod:*), Bash(mkdir:*), Bash(cp:*), Bash(mv:*), Bash(docker compose:*)
 ---
 
 # web-tools — Local-first web search & reading CLI
@@ -15,6 +15,29 @@ Local-first web search and reading tools for AI agents. Zero cost, no API keys, 
 - Need to check local setup or optional dependencies → `doctor`
 - User asks "look this up", "find information about", "search for", "read this article/page"
 - Any task that currently uses `mcp__web_search__web_search_prime` or `mcp__web_reader__webReader` should use these CLIs instead
+
+## First use
+
+If `web-tools` is missing, install it before attempting search or read work.
+Prefer GitHub Releases for normal use, or build from source when working from a
+checkout:
+
+```bash
+git clone https://github.com/koda-claw/web-tools.git
+cd web-tools
+SKILL_DIR="$HOME/.codex/skills" sh scripts/install.sh
+```
+
+Then verify the runtime:
+
+```bash
+web-tools --version
+web-tools doctor --json
+```
+
+For agents that only have the repository URL, copy `skills/web-tools` into the
+agent's local skills directory, then rely on this skill for the search/read
+workflow.
 
 ## Prerequisites
 
@@ -88,8 +111,8 @@ Domain filters match exact domains and subdomains. Search results are normalized
 # Basic search
 web-tools web-search "latest AI news"
 
-# Chinese search, last week, 3 results, JSON output
-web-tools web-search "人工智能最新进展" --locale zh-CN --time-range week --limit 3 --json
+# Localized search, last week, 3 results, JSON output
+web-tools web-search "AI latest developments" --locale en-US --time-range week --limit 3 --json
 
 # News category
 web-tools web-search "Tesla" --category news --time-range day
@@ -212,7 +235,57 @@ web-tools web-reader ./data.xlsx
 
 ---
 
-## Combined workflow (agent patterns)
+## Agent research workflow
+
+This tool is primarily for Agent research workflows. Prefer composing `web-search` and `web-reader` through this skill, and do not assume a combined `web-research` command exists by default.
+
+### Recommended research loop
+
+1. Check the local setup when the task is broad, blocked, or depends on optional browser/file conversion tools:
+
+```bash
+web-tools doctor --json
+```
+
+2. Search with structured output:
+
+```bash
+web-tools web-search "Go readability library" --limit 5 --json
+```
+
+3. Select URLs from the search results. Prefer sources whose title, snippet, domain, and ranking match the user goal. Use domain filters when the task asks for a specific source type or when noisy domains should be skipped:
+
+```bash
+web-tools web-search "Go readability library" \
+  --include-domain github.com \
+  --exclude-domain reddit.com,medium.com \
+  --limit 5 \
+  --json
+```
+
+4. Read selected URLs with JSON output:
+
+```bash
+web-tools web-reader "https://github.com/go-shiori/go-readability" --json
+```
+
+5. Inspect `quality.score`, `quality.needs_fallback`, `quality.word_count`, and stderr warnings. Retry with browser only when extraction is sparse or the page is likely JS-rendered:
+
+```bash
+web-tools web-reader "https://example.com/article" --browser --json
+```
+
+6. Synthesize the answer outside web-tools. Preserve source URLs, mention partial failures when they affect confidence, and do not treat read failures as evidence that the source lacks relevant information.
+
+### Agent policy
+
+- Keep `web-search` and `web-reader` as explicit, debuggable steps.
+- Do not hide individual search or read errors.
+- Do not invent citations; cite URLs actually searched/read.
+- Prefer JSON for Agent workflows because stdout remains machine-consumable and warnings stay on stderr.
+- Use `--browser` selectively; it is a fallback for sparse extraction or JS-rendered pages, not a default for every URL.
+- Use `--include-domain` and `--exclude-domain` to encode source constraints from the user request.
+- For high-stakes or current information tasks, read multiple independent sources before answering.
 
 ### Search then read
 

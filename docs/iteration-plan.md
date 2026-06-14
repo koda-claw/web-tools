@@ -4,6 +4,10 @@
 
 This plan keeps the next iteration focused: first make the existing CLI contract reliable, then add new capabilities. The current baseline is healthy, so the work should improve consistency and operability before expanding scope.
 
+## 文档语言约定
+
+后续新增或更新的迭代计划、方案设计、验收标准、测试用例和完成记录，默认使用中文编写。命令、参数、JSON 字段、文件路径、错误码和代码标识保持原文，避免影响实现和测试对照。
+
 ## Current Baseline
 
 - Repository: `github.com/koda-claw/web-tools`

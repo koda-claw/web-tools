@@ -202,6 +202,36 @@ func TestAutoMode_FallbackToDDG(t *testing.T) {
 	assert.Equal(t, "DDG Result", resp.Results[0].Title)
 }
 
+func TestAutoMode_FallbackToDDGWhenFirstEngineReturnsNoResults(t *testing.T) {
+	ddgResults := []RawResult{
+		{Title: "DDG Result", URL: "https://ddg.example.com", Snippet: "via DDG", Source: "ddg.example.com"},
+	}
+
+	s := makeTestSearch(
+		&mockEngine{name: "searxng", queryResult: nil},
+		&mockEngine{name: "duckduckgo", queryResult: ddgResults},
+	)
+
+	resp, err := s.Do("test query", SearchOptions{Engine: "auto"})
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "DDG Result", resp.Results[0].Title)
+}
+
+func TestAutoMode_ReturnsEmptyResultsWhenAllEnginesReturnNoResults(t *testing.T) {
+	s := makeTestSearch(
+		&mockEngine{name: "searxng", queryResult: nil},
+		&mockEngine{name: "duckduckgo", queryResult: nil},
+	)
+
+	resp, err := s.Do("test query", SearchOptions{Engine: "auto"})
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Empty(t, resp.Results)
+	assert.Equal(t, 0, resp.Total)
+}
+
 // TestAutoMode_AllEnginesFail verifies that an error is returned when all engines fail.
 func TestAutoMode_AllEnginesFail(t *testing.T) {
 	s := makeTestSearch(

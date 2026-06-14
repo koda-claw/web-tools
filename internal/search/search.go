@@ -120,10 +120,13 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 
 	var (
-		rawResults  []RawResult
-		usedEngine  string
-		lastErr     error
-		ddgFallback bool
+		rawResults          []RawResult
+		usedEngine          string
+		lastErr             error
+		lastEmptyResults    []RawResult
+		lastEmptyEngine     string
+		ddgFallback         bool
+		ddgFallbackEmptyHit bool
 	)
 
 	for _, e := range candidates {
@@ -146,23 +149,38 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			return nil, err
 		}
 
+		if engineName == "auto" && len(results) == 0 && len(candidates) > 1 {
+			fmt.Fprintf(os.Stderr, "[web-search] engine %s returned no results; trying next engine\n", e.Name())
+			lastEmptyResults = results
+			lastEmptyEngine = e.Name()
+			continue
+		}
+
 		rawResults = results
 		usedEngine = e.Name()
 		// Track when auto mode fell back to DDG so we can warn about limitations.
 		if engineName == "auto" && e.Name() == "duckduckgo" && len(candidates) > 1 {
 			ddgFallback = true
+			ddgFallbackEmptyHit = lastEmptyEngine != ""
 		}
 		break
 	}
 
 	if usedEngine == "" {
-		if lastErr != nil {
+		if lastEmptyEngine != "" {
+			rawResults = lastEmptyResults
+			usedEngine = lastEmptyEngine
+		} else if lastErr != nil {
 			return nil, lastErr
+		} else {
+			return nil, fmt.Errorf("all search engines failed")
 		}
-		return nil, fmt.Errorf("all search engines failed")
 	}
 
 	if ddgFallback {
+		if ddgFallbackEmptyHit {
+			fmt.Fprintf(os.Stderr, "[web-search] warning: fell back to DuckDuckGo Lite because a prior engine returned no results\n")
+		}
 		if opts.Category != "" && opts.Category != "general" {
 			fmt.Fprintf(os.Stderr, "[web-search] warning: fell back to DuckDuckGo Lite; --category %q is not supported and was ignored\n", opts.Category)
 		}

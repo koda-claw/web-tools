@@ -4,10 +4,27 @@ Local-first web search and reading CLI for AI agents.
 
 Zero cost. No API keys. No third-party dependencies.
 
+[Releases](https://github.com/koda-claw/web-tools/releases)
+
 ## What it does
 
 - **web-search**: Search the web via DuckDuckGo Lite by default, with optional local SearXNG
 - **web-reader**: Extract readable content from URLs or convert local files (PDF, DOCX, PPTX, XLSX) to Markdown
+
+## Agent Quick Start
+
+If another agent only has this repository URL, have it follow this order:
+
+1. Install the `web-tools` CLI binary or build it from source.
+2. Install the `skills/web-tools` skill folder into its local skills directory.
+3. Run `web-tools doctor --json` and fix only hard errors. Missing optional dependencies are warnings.
+4. Use `web-tools web-search "<query>" --json` to find candidate sources.
+5. Use `web-tools web-reader "<url>" --json` to read selected pages.
+6. Inspect `quality` metadata and retry with `--browser` only for sparse or JS-rendered pages.
+
+The CLI provides explicit search, read, quality, and error signals. The skill
+guides the agent on source selection, browser fallback, partial failures, and
+preserving source URLs.
 
 ## Install
 
@@ -27,16 +44,31 @@ curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-too
 
 # Windows x64
 curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-windows-amd64.exe -o /usr/local/bin/web-tools.exe
+
+# Windows ARM64
+curl -sL https://github.com/koda-claw/web-tools/releases/latest/download/web-tools-windows-arm64.exe -o /usr/local/bin/web-tools.exe
 ```
 
-### Build from source
+### Install from source checkout
 
 Requires Go 1.23+.
 
 ```bash
 git clone https://github.com/koda-claw/web-tools.git
 cd web-tools
-go build -o web-tools .
+
+# Install CLI only.
+sh scripts/install.sh
+
+# Or install CLI plus the Agent skill.
+SKILL_DIR="$HOME/.codex/skills" sh scripts/install.sh
+```
+
+Make sure the install directory is on `PATH`, then verify:
+
+```bash
+web-tools --version
+web-tools doctor --json
 ```
 
 ## Quick start
@@ -68,7 +100,7 @@ npm i -g agent-browser
 ```bash
 # Search
 web-tools web-search "latest AI news"
-web-tools web-search "人工智能" --locale zh-CN --limit 3
+web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 
 # Read a URL
@@ -126,6 +158,22 @@ npx skills add koda-claw/web-tools
 ```
 
 This installs the SKILL.md to your agent's skills directory, enabling AI agents to use web-tools automatically.
+
+Manual skill installation is also supported. Copy the repository skill folder:
+
+```bash
+# Codex-style local skill directory
+mkdir -p "$HOME/.codex/skills"
+cp -R skills/web-tools "$HOME/.codex/skills/"
+
+# Generic agent skill directory
+mkdir -p "$HOME/.agents/skills"
+cp -R skills/web-tools "$HOME/.agents/skills/"
+```
+
+After installing the skill, ask the agent to use `web-tools` for web search,
+webpage reading, article extraction, or file-to-Markdown conversion. The skill
+contains the Agent research workflow.
 
 ## Architecture
 
