@@ -197,11 +197,15 @@ BigModel/Zhipu MCP provider 可以通过 CLI 配置，不需要手写 JSON：
 
 ```bash
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
-export ZHIPU_APIKEY=...
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
 web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
 ```
+
+`--set-env` 会把 token 写到 `~/.config/web-tools/.env`，文件权限为 `0600`。
+CLI 会自动加载这个用户级 env file；如果当前 shell 已经设置了同名环境变量，则 shell 值优先。
+临时使用时，也可以只在当前 shell 中 `export ZHIPU_APIKEY=...`。
 
 如果希望 `--provider auto` 的搜索 fallback 也尝试 BigModel：
 
@@ -212,14 +216,15 @@ web-tools setup \
   --enable-search-auto
 ```
 
-`web-tools setup` 会安装或更新 Agent skill，在需要时写 provider 配置，并运行 `doctor`。
+`web-tools setup` 会安装或更新 Agent skill，在需要时写 provider 配置，可选写入 env file，并运行 `doctor`。
 如果只想改配置，也可以使用更聚焦的配置命令：
 
 ```bash
 web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
 ```
 
-这两个命令默认写入 `~/.config/web-tools/config.json`，只保存环境变量名，不保存 token 值。等价 JSON：
+这些命令默认写入 `~/.config/web-tools/config.json`，只保存环境变量名，不保存 token 值。
+token 应放在当前 shell 环境变量或 `~/.config/web-tools/.env` 中，不会写入 `config.json`。等价 JSON：
 
 ```json
 {

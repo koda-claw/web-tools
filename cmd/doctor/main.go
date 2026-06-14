@@ -150,6 +150,7 @@ func (c checker) Run() Report {
 
 	checks := []Check{
 		okCheck("config", "configuration loaded", nil),
+		envFileCheck(config.LoadEnvFiles()),
 		c.cacheCheck(cfg.Reader.CacheDir),
 		c.executableCheck("markitdown", cfg.Reader.MarkitdownPath, "optional file conversion dependency"),
 		c.executableCheck("agent-browser", cfg.Reader.AgentBrowserPath, "optional browser fallback dependency"),
@@ -162,6 +163,35 @@ func (c checker) Run() Report {
 		Checks: checks,
 		Config: summarizeConfig(*cfg),
 	}
+}
+
+func envFileCheck(report config.EnvFilesReport) Check {
+	details := map[string]string{
+		"user_path":       report.User.Path,
+		"user_exists":     fmt.Sprintf("%t", report.User.Exists),
+		"user_loaded":     fmt.Sprintf("%t", report.User.Loaded),
+		"explicit_path":   report.Explicit.Path,
+		"explicit_exists": fmt.Sprintf("%t", report.Explicit.Exists),
+		"explicit_loaded": fmt.Sprintf("%t", report.Explicit.Loaded),
+	}
+	if report.User.Mode != 0 {
+		details["user_mode"] = report.User.Mode.String()
+	}
+	if report.Explicit.Mode != 0 {
+		details["explicit_mode"] = report.Explicit.Mode.String()
+	}
+	if report.User.Error != "" {
+		details["user_error"] = report.User.Error
+		return errorCheck("env_file", "user env file failed to load", nil, details)
+	}
+	if report.Explicit.Error != "" {
+		details["explicit_error"] = report.Explicit.Error
+		return errorCheck("env_file", "explicit env file failed to load", nil, details)
+	}
+	if report.User.OverPermissive || report.Explicit.OverPermissive {
+		return warnCheck("env_file", "env file permissions are broader than 0600", details)
+	}
+	return okCheck("env_file", "env files checked", details)
 }
 
 func (c checker) cacheCheck(dir string) Check {

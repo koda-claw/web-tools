@@ -382,8 +382,21 @@ Prefer the CLI config command instead of hand-writing JSON:
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 ```
 
+If the user provides a token and wants persistent local CLI use, write it to the
+user env file through setup:
+
 ```bash
-export ZHIPU_APIKEY=...
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
+```
+
+This stores the token in `~/.config/web-tools/.env` with `0600` permissions.
+The CLI loads that file automatically. Existing shell environment variables win
+over env file values, so temporary `export ZHIPU_APIKEY=...` still works for
+one-off runs.
+
+Then verify:
+
+```bash
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
 web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
@@ -401,6 +414,8 @@ web-tools config provider add bigmodel \
 
 Do not put the API key itself in config. Store only the env var name in
 `auth_env`, then rely on `doctor --json` to confirm `auth_configured=true`.
+If `auth_configured=false`, ask the user to provide the token or configure the
+named env var; do not invent or print secret values.
 
 Do not parse raw MCP responses in the agent. The CLI normalizes MCP responses
 into the regular `web-search --json` and `web-reader --json` envelopes.

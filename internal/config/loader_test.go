@@ -297,3 +297,79 @@ func TestLoad_WebToolsConfigOverridesProviderConfig(t *testing.T) {
 	assert.Equal(t, "web_search_prime", provider.Search.Tool)
 	assert.Equal(t, []string{"bigmodel", "duckduckgo"}, cfg.Search.DefaultProviderChain)
 }
+
+func TestLoad_UserEnvFileProvidesAuthAndConfigEnv(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+	t.Setenv("HOME", dir)
+	unsetEnvForTest(t, "ZHIPU_APIKEY")
+	unsetEnvForTest(t, "SEARXNG_URL")
+
+	userEnv := filepath.Join(dir, ".config", "web-tools", ".env")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(userEnv), 0755))
+	assert.NoError(t, os.WriteFile(userEnv, []byte("ZHIPU_APIKEY=file-secret\nSEARXNG_URL=http://envfile:8888\n"), 0600))
+
+	cfg, err := Load()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "file-secret", os.Getenv("ZHIPU_APIKEY"))
+	assert.Equal(t, "http://envfile:8888", cfg.Search.SearXNGURL)
+}
+
+func TestLoad_EnvFileDoesNotOverrideShellEnv(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+	t.Setenv("HOME", dir)
+	t.Setenv("SEARXNG_URL", "http://shell:7777")
+
+	userEnv := filepath.Join(dir, ".config", "web-tools", ".env")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(userEnv), 0755))
+	assert.NoError(t, os.WriteFile(userEnv, []byte("SEARXNG_URL=http://envfile:8888\n"), 0600))
+
+	cfg, err := Load()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "http://shell:7777", cfg.Search.SearXNGURL)
+}
+
+func TestLoad_WebToolsConfigStillOverridesEnvFileConfigFields(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+	t.Setenv("HOME", dir)
+	unsetEnvForTest(t, "SEARXNG_URL")
+
+	userEnv := filepath.Join(dir, ".config", "web-tools", ".env")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(userEnv), 0755))
+	assert.NoError(t, os.WriteFile(userEnv, []byte("SEARXNG_URL=http://envfile:8888\n"), 0600))
+	overridePath := filepath.Join(dir, "override.json")
+	assert.NoError(t, os.WriteFile(overridePath, []byte(`{"search":{"searxng_url":"http://override:9999"}}`), 0644))
+	t.Setenv("WEB_TOOLS_CONFIG", overridePath)
+
+	cfg, err := Load()
+
+	assert.NoError(t, err)
+	assert.Equal(t, "http://override:9999", cfg.Search.SearXNGURL)
+}
+
+func TestLoad_InvalidEnvFileReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+	t.Setenv("HOME", dir)
+
+	userEnv := filepath.Join(dir, ".config", "web-tools", ".env")
+	assert.NoError(t, os.MkdirAll(filepath.Dir(userEnv), 0755))
+	assert.NoError(t, os.WriteFile(userEnv, []byte("INVALID\n"), 0600))
+
+	_, err := Load()
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "user env file")
+}

@@ -198,11 +198,16 @@ Optional MCP providers can be enabled through config. For BigModel/Zhipu:
 
 ```bash
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
-export ZHIPU_APIKEY=...
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
 web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
 ```
+
+`--set-env` writes the token to `~/.config/web-tools/.env` with `0600`
+permissions. The CLI loads this user env file automatically; existing shell
+environment variables still take precedence. For one-off use, exporting
+`ZHIPU_APIKEY` in the current shell also works.
 
 To include BigModel in `--provider auto` search fallback:
 
@@ -214,15 +219,17 @@ web-tools setup \
 ```
 
 `web-tools setup` installs or updates the Agent skill, writes provider config
-when requested, and runs `doctor`. The config command is also available for
-focused changes:
+when requested, optionally writes an env file, and runs `doctor`. The config
+command is also available for focused changes:
 
 ```bash
 web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
 ```
 
-Both commands write `~/.config/web-tools/config.json` by default and store only
-the environment variable name, not the token value. Equivalent JSON:
+These commands write `~/.config/web-tools/config.json` by default and store only
+the environment variable name, not the token value. Tokens belong in the current
+shell environment or `~/.config/web-tools/.env`; they are never written to
+`config.json`. Equivalent JSON:
 
 ```json
 {

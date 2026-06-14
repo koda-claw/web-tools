@@ -33,6 +33,7 @@ func TestDoctorRun_AllOK(t *testing.T) {
 
 	assert.True(t, report.OK)
 	assert.Equal(t, StatusOK, report.Checks[0].Status)
+	assert.Equal(t, StatusOK, findCheck(t, report, "env_file").Status)
 	assert.Equal(t, "auto", report.Config.Search.DefaultEngine)
 	assert.Equal(t, "auto", report.Config.Search.DefaultProvider)
 	assert.Equal(t, "/tmp/web-tools-test-cache", report.Config.Reader.CacheDir)
@@ -101,6 +102,22 @@ func TestDoctorRun_ConfigFailureIsError(t *testing.T) {
 	require.Len(t, report.Checks, 1)
 	assert.Equal(t, "config", report.Checks[0].Name)
 	assert.Equal(t, StatusError, report.Checks[0].Status)
+}
+
+func TestEnvFileCheckDoesNotLeakValues(t *testing.T) {
+	report := config.EnvFilesReport{
+		User: config.EnvFileStatus{
+			Path:   "/tmp/.env",
+			Exists: true,
+			Loaded: true,
+		},
+	}
+
+	check := envFileCheck(report)
+
+	assert.Equal(t, StatusOK, check.Status)
+	assert.Equal(t, "true", check.Details["user_loaded"])
+	assert.NotContains(t, check.Details, "value")
 }
 
 func TestDoctorRun_CacheFailureIsError(t *testing.T) {

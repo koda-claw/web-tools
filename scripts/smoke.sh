@@ -79,13 +79,21 @@ echo "[smoke] setup command"
 go run . setup \
   --provider bigmodel \
   --auth-env ZHIPU_APIKEY \
+  --set-env ZHIPU_APIKEY=fake-smoke-token \
+  --env-file "$tmp_dir/setup.env" \
   --enable-search-auto \
   --config "$tmp_dir/setup-config.json" \
   --skill-dir "$tmp_dir/setup-skills" \
   --skill-source ./skills/web-tools/SKILL.md \
   --skip-doctor >"$tmp_dir/setup.out"
 grep -q 'Configured provider "bigmodel"' "$tmp_dir/setup.out"
+grep -q 'Stored ZHIPU_APIKEY' "$tmp_dir/setup.out"
+if grep -q 'fake-smoke-token' "$tmp_dir/setup.out"; then
+  echo "setup output leaked env value" >&2
+  exit 1
+fi
 test -f "$tmp_dir/setup-skills/web-tools/SKILL.md"
 grep -q '"bigmodel"' "$tmp_dir/setup-config.json"
+grep -q 'ZHIPU_APIKEY=fake-smoke-token' "$tmp_dir/setup.env"
 
 echo "[smoke] ok"

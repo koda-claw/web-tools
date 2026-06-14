@@ -174,11 +174,13 @@ MCP Streamable HTTP provider 需要满足最小协议契约：
 验证命令：
 
 ```bash
-export ZHIPU_APIKEY=...
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
 web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
 ```
+
+如果只是临时验收，也可以在当前 shell 中 `export ZHIPU_APIKEY=...`。不要把 token 写进 `config.json` 或提交到仓库。
 
 不要把 live provider 测试放进默认 CI。默认 CI 应依赖 mock MCP server，真实服务只作为显式验收。
 

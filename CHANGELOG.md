@@ -5,6 +5,9 @@
 ### Added
 
 - `web-tools setup` for one-command Agent setup, optional provider configuration, skill install, and doctor checks.
+- User env file auto-loading from `~/.config/web-tools/.env`, with `WEB_TOOLS_ENV` override support.
+- `web-tools setup --set-env KEY=value` with `--env-file` and `--force-env` for non-interactive env file setup.
+- `doctor` env file diagnostics without exposing secret values.
 
 ## v1.4.1 - 2026-06-15
 

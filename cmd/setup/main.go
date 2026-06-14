@@ -3,10 +3,12 @@ package setupcmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	configcmd "github.com/koda-claw/web-tools/cmd/config"
 	"github.com/koda-claw/web-tools/cmd/doctor"
 	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
+	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
 	"github.com/spf13/cobra"
 )
@@ -23,6 +25,9 @@ func Cmd(version string) *cobra.Command {
 		flagForceSkill       bool
 		flagEnableSearchAuto bool
 		flagEnableReaderAuto bool
+		flagEnvFile          string
+		flagSetEnv           string
+		flagForceEnv         bool
 		flagSkipDoctor       bool
 	)
 
@@ -34,6 +39,7 @@ optionally configure a provider preset, and run doctor so the caller can see
 what still needs attention.`,
 		Example: `  web-tools setup
   web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
+  web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
   web-tools setup --provider bigmodel --enable-search-auto --install-skill`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -48,6 +54,9 @@ what still needs attention.`,
 				ForceSkill:       flagForceSkill,
 				EnableSearchAuto: flagEnableSearchAuto,
 				EnableReaderAuto: flagEnableReaderAuto,
+				EnvFile:          flagEnvFile,
+				SetEnv:           flagSetEnv,
+				ForceEnv:         flagForceEnv,
 				SkipDoctor:       flagSkipDoctor,
 			}
 			if err := Run(opts); err != nil {
@@ -65,6 +74,9 @@ what still needs attention.`,
 	cmd.Flags().BoolVar(&flagForceSkill, "force-skill", true, "Overwrite existing web-tools skill during setup")
 	cmd.Flags().BoolVar(&flagEnableSearchAuto, "enable-search-auto", false, "Add provider to search.default_provider_chain")
 	cmd.Flags().BoolVar(&flagEnableReaderAuto, "enable-reader-auto", false, "Add provider to reader.default_provider_chain")
+	cmd.Flags().StringVar(&flagEnvFile, "env-file", config.EnvFilePath(), "Env file path for --set-env")
+	cmd.Flags().StringVar(&flagSetEnv, "set-env", "", "Write KEY=value to env file without printing the value")
+	cmd.Flags().BoolVar(&flagForceEnv, "force-env", false, "Overwrite an existing key in env file")
 	cmd.Flags().BoolVar(&flagSkipDoctor, "skip-doctor", false, "Skip final doctor check")
 	return cmd
 }
@@ -81,6 +93,9 @@ type Options struct {
 	ForceSkill       bool
 	EnableSearchAuto bool
 	EnableReaderAuto bool
+	EnvFile          string
+	SetEnv           string
+	ForceEnv         bool
 	SkipDoctor       bool
 }
 
@@ -107,6 +122,24 @@ func Run(opts Options) error {
 		fmt.Fprintln(os.Stdout, "To add BigModel later: web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY")
 	}
 
+	if opts.SetEnv != "" {
+		key, value, err := parseSetEnv(opts.SetEnv)
+		if err != nil {
+			return err
+		}
+		if opts.EnvFile == "" {
+			opts.EnvFile = config.EnvFilePath()
+		}
+		if err := config.WriteEnvValue(opts.EnvFile, key, value, opts.ForceEnv); err != nil {
+			return apperrors.NewInputError(
+				"cannot write env file",
+				err.Error(),
+				[]string{"check --env-file permissions", "rerun with --force-env to overwrite an existing key"},
+			)
+		}
+		fmt.Fprintf(os.Stdout, "Stored %s in %s\n", key, config.ExpandHome(opts.EnvFile))
+	}
+
 	if opts.SkipDoctor {
 		fmt.Fprintln(os.Stdout, "\n[3/3] Skipping doctor")
 		return nil
@@ -123,4 +156,16 @@ func Run(opts Options) error {
 		)
 	}
 	return nil
+}
+
+func parseSetEnv(raw string) (string, string, error) {
+	key, value, ok := strings.Cut(raw, "=")
+	if !ok || key == "" {
+		return "", "", apperrors.NewInputError(
+			"invalid --set-env",
+			"--set-env must use KEY=value format",
+			[]string{"run: web-tools setup --provider bigmodel --set-env ZHIPU_APIKEY=<token>"},
+		)
+	}
+	return key, value, nil
 }

@@ -9,20 +9,20 @@ web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
 ```
 
-但认证值仍依赖当前进程环境变量。也就是说，如果用户只把 API key 写到：
+此前认证值仍依赖当前进程环境变量。也就是说，如果用户只把 API key 写到：
 
 ```text
 ~/.config/web-tools/.env
 ```
 
-当前 `web-tools web-search ... --provider bigmodel` 不会自动读取它，`doctor --json` 也会显示 `auth_configured=false`。
+旧版本的 `web-tools web-search ... --provider bigmodel` 不会自动读取它，`doctor --json` 也会显示 `auth_configured=false`。
 
-这会影响两个场景：
+这个缺口会影响两个场景：
 
 - 人类用户：希望配置一次后，之后直接运行 CLI。
 - Agent 场景：skill 知道 provider id 和 `auth_env`，但如果 env file 不自动加载，Agent 仍需要外部 shell 先 export。
 
-因此下一阶段目标是把 setup/config/env/skill 的闭环补齐，同时保持 secret 安全。
+v1.4.2 的目标是把 setup/config/env/skill 的闭环补齐，同时保持 secret 安全。
 
 ## 总体原则
 
@@ -240,6 +240,20 @@ HOME=<tmp> web-tools doctor --json
 ```bash
 WEB_TOOLS_ENV=~/.config/web-tools/.env web-tools web-search "Go readability library" --provider bigmodel --json
 ```
+
+#### v1.4.2 实施状态
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| Task 19 | Complete | 新增 env file parser 和用户级 env file 自动加载；支持 `WEB_TOOLS_ENV`；shell env 优先；`WEB_TOOLS_CONFIG` 仍保持配置覆盖优先级。 |
+| Task 20 | Complete | `setup` 支持 `--env-file`、`--set-env`、`--force-env`，默认写入 `~/.config/web-tools/.env` 且权限为 `0600`。 |
+| Task 21 | Complete | `doctor` 输出 env file 非敏感诊断，包含存在、加载、权限状态，不输出 env value。 |
+
+已覆盖测试：
+
+- `internal/config`：env file 解析、写入、权限、显式 env file、shell env 优先、`WEB_TOOLS_CONFIG` 覆盖。
+- `cmd/setup`：写 env file、拒绝覆盖、`--force-env` 覆盖、stdout 不泄漏 secret。
+- `cmd/doctor`：env file 诊断不泄漏 value。
 
 ### v1.4.3: Setup Check / Repair 建议
 

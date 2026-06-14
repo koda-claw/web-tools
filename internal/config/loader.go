@@ -57,6 +57,11 @@ type searchConfigOverlay struct {
 // Load reads config from files and environment variables, merges with defaults.
 // Priority (high to low): env vars > current dir config > user config > defaults
 func Load() (*Config, error) {
+	envReport := LoadEnvFiles()
+	if err := envReport.Err(); err != nil {
+		return nil, err
+	}
+
 	cfg := DefaultConfig()
 
 	// 1. Load user config: ~/.config/web-tools/config.json
