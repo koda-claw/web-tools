@@ -75,3 +75,7 @@ BIN_DIR="$(mktemp -d)" SKILL_DIR="$(mktemp -d)" sh scripts/install.sh
 - 不发布 `web-research` 命令。
 - 不引入 CDP 或新的浏览器后端。
 - 不把总结、引用生成或可信度判断固化进 CLI。
+
+## 发布后补充验证
+
+`v1.3.0` 发布后，main 分支补充了离线 CLI 集成测试，覆盖本地 fixture 下的 `web-search --json`、`web-reader --json`、配置默认值、域名过滤、去重和稀疏内容质量警告。后续版本发布时，这些测试会随 `go test ./...` 一起作为发布门槛执行。

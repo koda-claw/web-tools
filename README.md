@@ -118,6 +118,19 @@ web-tools doctor
 web-tools doctor --json
 ```
 
+## Test
+
+```bash
+go vet ./...
+go test ./...
+./scripts/smoke.sh
+```
+
+`go test ./...` includes offline CLI integration tests. They build a temporary
+`web-tools` binary, run it against local HTTP fixtures, and verify the
+search-then-read Agent workflow without calling live search engines or a real
+browser.
+
 ## Doctor
 
 Use `web-tools doctor` to check local configuration and optional dependencies. Missing optional tools such as SearXNG, MarkItDown, or agent-browser are reported as warnings; invalid config or an unwritable cache directory is reported as an error.
