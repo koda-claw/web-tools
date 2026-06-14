@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.3.2 - 2026-06-14
+
+Patch release from real-world Agent workflow testing.
+
+### Fixed
+
+- `web-search --engine auto` now falls back to the next engine when the current engine has raw results but all of them are removed by domain filters such as `--include-domain` or `--exclude-domain`.
+- This fixes a real Agent research case where local SearXNG returned results that did not match `--include-domain github.com`, causing auto mode to stop with zero results instead of trying DuckDuckGo.
+
+### Improved
+
+- Source install now embeds `git describe` into `web-tools --version`, making local checkout installs easier for agents to verify.
+- CLI examples were polished to keep README and command help consistent.
+
+### Real Workflow Verification
+
+- Installed CLI and skill with `SKILL_DIR="$HOME/.codex/skills" sh scripts/install.sh`.
+- Verified `web-tools doctor --json`.
+- Verified `web-tools web-search "Go readability library" --include-domain github.com --limit 3 --json`.
+- Verified `web-tools web-reader "https://github.com/go-shiori/go-readability" --json --no-cache`.
+
 ## v1.3.1 - 2026-06-14
 
 Patch release focused on release confidence and Agent handoff quality.
