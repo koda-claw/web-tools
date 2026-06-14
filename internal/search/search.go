@@ -120,10 +120,10 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 
 	var (
-		rawResults          []RawResult
+		results             []SearchResult
 		usedEngine          string
 		lastErr             error
-		lastEmptyResults    []RawResult
+		lastEmptyResults    []SearchResult
 		lastEmptyEngine     string
 		ddgFallback         bool
 		ddgFallbackEmptyHit bool
@@ -139,7 +139,7 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			return nil, err
 		}
 
-		results, err := e.Query(query, opts)
+		rawResults, err := e.Query(query, opts)
 		if err != nil {
 			if engineName == "auto" {
 				fmt.Fprintf(os.Stderr, "[web-search] engine %s query failed: %v\n", e.Name(), err)
@@ -149,14 +149,15 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			return nil, err
 		}
 
-		if engineName == "auto" && len(results) == 0 && len(candidates) > 1 {
+		normalizedResults := normalizeResults(rawResults, e.Name(), opts)
+		if engineName == "auto" && len(normalizedResults) == 0 && len(candidates) > 1 {
 			fmt.Fprintf(os.Stderr, "[web-search] engine %s returned no results; trying next engine\n", e.Name())
-			lastEmptyResults = results
+			lastEmptyResults = normalizedResults
 			lastEmptyEngine = e.Name()
 			continue
 		}
 
-		rawResults = results
+		results = normalizedResults
 		usedEngine = e.Name()
 		// Track when auto mode fell back to DDG so we can warn about limitations.
 		if engineName == "auto" && e.Name() == "duckduckgo" && len(candidates) > 1 {
@@ -168,7 +169,7 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 
 	if usedEngine == "" {
 		if lastEmptyEngine != "" {
-			rawResults = lastEmptyResults
+			results = lastEmptyResults
 			usedEngine = lastEmptyEngine
 		} else if lastErr != nil {
 			return nil, lastErr
@@ -188,9 +189,6 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 			fmt.Fprintf(os.Stderr, "[web-search] warning: fell back to DuckDuckGo Lite; --time-range %q is not supported and was ignored\n", opts.TimeRange)
 		}
 	}
-
-	// Normalize results into the public SearchResult type.
-	results := normalizeResults(rawResults, usedEngine, opts)
 
 	return &SearchResponse{
 		Query:      query,

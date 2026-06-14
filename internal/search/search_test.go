@@ -219,6 +219,26 @@ func TestAutoMode_FallbackToDDGWhenFirstEngineReturnsNoResults(t *testing.T) {
 	assert.Equal(t, "DDG Result", resp.Results[0].Title)
 }
 
+func TestAutoMode_FallbackToDDGWhenFirstEngineResultsAreFilteredOut(t *testing.T) {
+	ddgResults := []RawResult{
+		{Title: "GitHub Result", URL: "https://github.com/example/repo", Snippet: "via DDG", Source: "github.com"},
+	}
+
+	s := makeTestSearch(
+		&mockEngine{name: "searxng", queryResult: []RawResult{
+			{Title: "Filtered Result", URL: "https://noise.example.net/page", Snippet: "via SearXNG", Source: "noise.example.net"},
+		}},
+		&mockEngine{name: "duckduckgo", queryResult: ddgResults},
+	)
+
+	resp, err := s.Do("test query", SearchOptions{Engine: "auto", IncludeDomains: []string{"github.com"}})
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "GitHub Result", resp.Results[0].Title)
+	assert.Equal(t, "github.com", resp.Results[0].Source)
+}
+
 func TestAutoMode_ReturnsEmptyResultsWhenAllEnginesReturnNoResults(t *testing.T) {
 	s := makeTestSearch(
 		&mockEngine{name: "searxng", queryResult: nil},
