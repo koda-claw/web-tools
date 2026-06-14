@@ -8,25 +8,50 @@ import (
 )
 
 type configOverlay struct {
-	Reader readerConfigOverlay `json:"reader"`
-	Search searchConfigOverlay `json:"search"`
+	Providers map[string]providerConfigOverlay `json:"providers"`
+	Reader    readerConfigOverlay              `json:"reader"`
+	Search    searchConfigOverlay              `json:"search"`
+}
+
+type providerConfigOverlay struct {
+	Type         *string                      `json:"type"`
+	AuthEnv      *string                      `json:"auth_env"`
+	EnabledIfEnv *string                      `json:"enabled_if_env"`
+	Timeout      *int                         `json:"timeout"`
+	Command      *string                      `json:"command"`
+	Capabilities []string                     `json:"capabilities"`
+	Search       *providerEndpointOverlay     `json:"search"`
+	Reader       *providerEndpointOverlay     `json:"reader"`
+	Extra        map[string]map[string]string `json:"extra"`
+	Headers      map[string]string            `json:"headers"`
+	Metadata     map[string]string            `json:"metadata"`
+}
+
+type providerEndpointOverlay struct {
+	URL    *string           `json:"url"`
+	Tool   *string           `json:"tool"`
+	Params map[string]string `json:"params"`
 }
 
 type readerConfigOverlay struct {
-	CacheDir         *string `json:"cache_dir"`
-	CacheTTL         *int    `json:"cache_ttl"`
-	DefaultTimeout   *int    `json:"default_timeout"`
-	BrowserFallback  *bool   `json:"browser_fallback"`
-	MarkitdownPath   *string `json:"markitdown_path"`
-	AgentBrowserPath *string `json:"agent_browser_path"`
-	MinContentLength *int    `json:"min_content_length"`
+	CacheDir             *string  `json:"cache_dir"`
+	CacheTTL             *int     `json:"cache_ttl"`
+	DefaultTimeout       *int     `json:"default_timeout"`
+	BrowserFallback      *bool    `json:"browser_fallback"`
+	MarkitdownPath       *string  `json:"markitdown_path"`
+	AgentBrowserPath     *string  `json:"agent_browser_path"`
+	MinContentLength     *int     `json:"min_content_length"`
+	DefaultProvider      *string  `json:"default_provider"`
+	DefaultProviderChain []string `json:"default_provider_chain"`
 }
 
 type searchConfigOverlay struct {
-	SearXNGURL    *string `json:"searxng_url"`
-	DefaultLimit  *int    `json:"default_limit"`
-	DefaultLocale *string `json:"default_locale"`
-	DefaultEngine *string `json:"default_engine"`
+	SearXNGURL           *string  `json:"searxng_url"`
+	DefaultLimit         *int     `json:"default_limit"`
+	DefaultLocale        *string  `json:"default_locale"`
+	DefaultEngine        *string  `json:"default_engine"`
+	DefaultProvider      *string  `json:"default_provider"`
+	DefaultProviderChain []string `json:"default_provider_chain"`
 }
 
 // Load reads config from files and environment variables, merges with defaults.
@@ -71,8 +96,77 @@ func mergeConfigOverlay(dst *Config, src *configOverlay) {
 	if src == nil {
 		return
 	}
+	mergeProviderConfigOverlay(dst, src.Providers)
 	mergeReaderConfigOverlay(&dst.Reader, src.Reader)
 	mergeSearchConfigOverlay(&dst.Search, src.Search)
+}
+
+func mergeProviderConfigOverlay(dst *Config, src map[string]providerConfigOverlay) {
+	if len(src) == 0 {
+		return
+	}
+	if dst.Providers == nil {
+		dst.Providers = map[string]ProviderConfig{}
+	}
+	for id, overlay := range src {
+		current := dst.Providers[id]
+		if overlay.Type != nil {
+			current.Type = *overlay.Type
+		}
+		if overlay.AuthEnv != nil {
+			current.AuthEnv = *overlay.AuthEnv
+		}
+		if overlay.EnabledIfEnv != nil {
+			current.EnabledIfEnv = *overlay.EnabledIfEnv
+		}
+		if overlay.Timeout != nil {
+			current.Timeout = *overlay.Timeout
+		}
+		if overlay.Command != nil {
+			current.Command = *overlay.Command
+		}
+		if overlay.Capabilities != nil {
+			current.Capabilities = append([]string(nil), overlay.Capabilities...)
+		}
+		if overlay.Search != nil {
+			endpoint := mergeProviderEndpoint(current.Search, overlay.Search)
+			current.Search = &endpoint
+		}
+		if overlay.Reader != nil {
+			endpoint := mergeProviderEndpoint(current.Reader, overlay.Reader)
+			current.Reader = &endpoint
+		}
+		if overlay.Extra != nil {
+			current.Extra = cloneNestedStringMap(overlay.Extra)
+		}
+		if overlay.Headers != nil {
+			current.Headers = cloneStringMap(overlay.Headers)
+		}
+		if overlay.Metadata != nil {
+			current.Metadata = cloneStringMap(overlay.Metadata)
+		}
+		dst.Providers[id] = current
+	}
+}
+
+func mergeProviderEndpoint(current *ProviderEndpointConfig, overlay *providerEndpointOverlay) ProviderEndpointConfig {
+	var endpoint ProviderEndpointConfig
+	if current != nil {
+		endpoint = *current
+		if current.Params != nil {
+			endpoint.Params = cloneStringMap(current.Params)
+		}
+	}
+	if overlay.URL != nil {
+		endpoint.URL = *overlay.URL
+	}
+	if overlay.Tool != nil {
+		endpoint.Tool = *overlay.Tool
+	}
+	if overlay.Params != nil {
+		endpoint.Params = cloneStringMap(overlay.Params)
+	}
+	return endpoint
 }
 
 func mergeReaderConfigOverlay(dst *ReaderConfig, src readerConfigOverlay) {
@@ -97,6 +191,12 @@ func mergeReaderConfigOverlay(dst *ReaderConfig, src readerConfigOverlay) {
 	if src.BrowserFallback != nil {
 		dst.BrowserFallback = *src.BrowserFallback
 	}
+	if src.DefaultProvider != nil {
+		dst.DefaultProvider = *src.DefaultProvider
+	}
+	if src.DefaultProviderChain != nil {
+		dst.DefaultProviderChain = append([]string(nil), src.DefaultProviderChain...)
+	}
 }
 
 func mergeSearchConfigOverlay(dst *SearchConfig, src searchConfigOverlay) {
@@ -111,6 +211,12 @@ func mergeSearchConfigOverlay(dst *SearchConfig, src searchConfigOverlay) {
 	}
 	if src.DefaultEngine != nil {
 		dst.DefaultEngine = *src.DefaultEngine
+	}
+	if src.DefaultProvider != nil {
+		dst.DefaultProvider = *src.DefaultProvider
+	}
+	if src.DefaultProviderChain != nil {
+		dst.DefaultProviderChain = append([]string(nil), src.DefaultProviderChain...)
 	}
 }
 
@@ -140,4 +246,26 @@ func applyEnvOverrides(cfg *Config) {
 			mergeConfigOverlay(cfg, fileCfg)
 		}
 	}
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func cloneNestedStringMap(src map[string]map[string]string) map[string]map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]map[string]string, len(src))
+	for key, value := range src {
+		dst[key] = cloneStringMap(value)
+	}
+	return dst
 }

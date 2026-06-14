@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+## v1.4.0 - 2026-06-14
+
+Feature release for provider/plugin architecture and MCP-backed search/read providers.
+
+### Added
+
+- Provider/plugin configuration with built-in `searxng`, `duckduckgo`, and `builtin-reader` providers.
+- `web-search --provider` with compatibility for existing `--engine` workflows.
+- `web-reader --provider` with `builtin-reader` default behavior preserved.
+- MCP provider adapter for Streamable HTTP responses, including SSE event parsing and double-encoded `content[0].text` JSON payloads.
+- Optional BigModel/Zhipu MCP provider support through `ZHIPU_APIKEY`.
+- `doctor --json` provider summaries with auth configured status and no secret value leakage.
+- Provider architecture docs, Mermaid flow diagrams, and a provider plugin development guide.
+
+### Verified
+
+- `go test ./...`
+- `go vet ./...`
+- `./scripts/smoke.sh`
+- `git diff --check`
+- Live smoke with `ZHIPU_APIKEY`: BigModel Search MCP via `--provider bigmodel`.
+- Live smoke with `ZHIPU_APIKEY`: BigModel Reader MCP via `--provider bigmodel`.
+
 ## v1.3.2 - 2026-06-14
 
 Patch release from real-world Agent workflow testing.

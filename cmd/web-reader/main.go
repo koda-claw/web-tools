@@ -1,6 +1,7 @@
 package webreader
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,22 +10,25 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/provider"
+	mcpprovider "github.com/koda-claw/web-tools/internal/provider/mcp"
 	"github.com/koda-claw/web-tools/internal/reader"
 	"github.com/spf13/cobra"
 )
 
 func Cmd() *cobra.Command {
 	var (
-		flagJSON    bool
-		flagOutput  string
-		flagExtract string
-		flagMaxWord int
-		flagTimeout int
-		flagNoCache bool
-		flagBrowser bool
-		flagSession string
-		flagUA      string
-		flagFormat  string
+		flagJSON     bool
+		flagOutput   string
+		flagExtract  string
+		flagMaxWord  int
+		flagTimeout  int
+		flagNoCache  bool
+		flagBrowser  bool
+		flagSession  string
+		flagUA       string
+		flagFormat   string
+		flagProvider string
 	)
 
 	cmd := &cobra.Command{
@@ -42,7 +46,7 @@ Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
   web-tools web-reader https://example.com/article --no-cache --timeout 30`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			run(args[0], flagJSON, flagOutput, flagExtract, flagMaxWord, flagTimeout, flagNoCache, flagBrowser, flagSession, flagUA, flagFormat)
+			run(args[0], flagJSON, flagOutput, flagExtract, flagMaxWord, flagTimeout, flagNoCache, flagBrowser, flagSession, flagUA, flagFormat, flagProvider)
 		},
 	}
 
@@ -56,6 +60,7 @@ Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
 	cmd.Flags().StringVar(&flagSession, "session", "", "agent-browser session name for login state")
 	cmd.Flags().StringVar(&flagUA, "user-agent", "", "Custom User-Agent")
 	cmd.Flags().StringVar(&flagFormat, "format", "markdown", "Output format: markdown / text / html")
+	cmd.Flags().StringVar(&flagProvider, "provider", "auto", "Reader provider: auto / builtin-reader")
 
 	return cmd
 }
@@ -101,7 +106,7 @@ type QualityInfo struct {
 	Reasons       []string `json:"reasons,omitempty"`
 }
 
-func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, flagMaxWord int, flagTimeout int, flagNoCache bool, flagBrowser bool, flagSession string, flagUA string, flagFormat string) {
+func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, flagMaxWord int, flagTimeout int, flagNoCache bool, flagBrowser bool, flagSession string, flagUA string, flagFormat string, flagProvider string) {
 	if err := validateReaderFlags(flagExtract, flagFormat); err != nil {
 		apperrors.HandleError(err)
 	}
@@ -128,6 +133,10 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 			[]string{"check config file format", "check environment variables"},
 		))
 	}
+	selectedProvider, err := selectReaderProvider(cfg, flagProvider)
+	if err != nil {
+		apperrors.HandleError(err)
+	}
 
 	// 3. Initialize cache (URL inputs only)
 	var cache *reader.Cache
@@ -137,6 +146,13 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 4. Handle file inputs
 	if input.Type == reader.InputFile {
+		if selectedProvider.ID != "builtin-reader" {
+			apperrors.HandleError(apperrors.NewInputError(
+				"reader provider only supports URL input",
+				fmt.Sprintf("provider %q cannot read local files", selectedProvider.ID),
+				[]string{"use --provider builtin-reader for local files"},
+			))
+		}
 		result, err := handleFileInput(input, cfg, flagExtract, flagFormat)
 		if err != nil {
 			apperrors.HandleError(err)
@@ -146,7 +162,12 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	}
 
 	// 5. Handle URL inputs
-	result, err := handleURLInput(input, cfg, flagUA, cache, flagNoCache, flagBrowser, flagSession, flagExtract, flagFormat)
+	var result *PipelineResult
+	if selectedProvider.ID == "builtin-reader" {
+		result, err = handleURLInput(input, cfg, flagUA, cache, flagNoCache, flagBrowser, flagSession, flagExtract, flagFormat)
+	} else {
+		result, err = handleProviderURLInput(input, cfg, selectedProvider, flagFormat)
+	}
 	if err != nil {
 		apperrors.HandleError(err)
 	}
@@ -163,6 +184,92 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 7. Output
 	outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat)
+}
+
+func validateReaderProvider(cfg config.Config, requested string) error {
+	_, err := selectReaderProvider(cfg, requested)
+	return err
+}
+
+func selectReaderProvider(cfg config.Config, requested string) (provider.Provider, error) {
+	if requested == "" {
+		requested = cfg.Reader.DefaultProvider
+	}
+	if requested == "" {
+		requested = "auto"
+	}
+	reg, err := provider.NewRegistry(cfg.Providers)
+	if err != nil {
+		return provider.Provider{}, err
+	}
+	switch requested {
+	case "auto":
+		chain := cfg.Reader.DefaultProviderChain
+		if len(chain) == 0 {
+			chain = []string{"builtin-reader"}
+		}
+		providers, _, err := reg.ResolveChain(chain, provider.CapabilityReader)
+		if err != nil {
+			return provider.Provider{}, err
+		}
+		if len(providers) > 0 {
+			return providers[0], nil
+		}
+		return provider.Provider{}, apperrors.NewInputError(
+			"no reader providers available",
+			"reader auto chain did not resolve to any enabled reader providers",
+			[]string{"check reader.default_provider_chain", "configure provider auth envs"},
+		)
+	case "builtin-reader":
+		return reg.Get("builtin-reader", provider.CapabilityReader)
+	default:
+		selected, err := reg.Get(requested, provider.CapabilityReader)
+		if err != nil {
+			return provider.Provider{}, err
+		}
+		if selected.Config.Type != "mcp" {
+			return provider.Provider{}, apperrors.NewInputError(
+				"reader provider is not implemented yet",
+				fmt.Sprintf("provider %q uses unsupported type %q", requested, selected.Config.Type),
+				[]string{"use --provider builtin-reader", "use a provider with type mcp"},
+			)
+		}
+		return selected, nil
+	}
+}
+
+func handleProviderURLInput(input *reader.Input, cfg config.Config, selected provider.Provider, format string) (*PipelineResult, error) {
+	client := mcpprovider.NewClient(selected.Config, os.Getenv(selected.Config.AuthEnv))
+	result, err := client.Read(context.Background(), input.URL.String())
+	if err != nil {
+		return nil, err
+	}
+	content := result.Content
+	wordCount := len(strings.Fields(content))
+	metadata := result.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	metadata["provider"] = selected.ID
+	metadata["provider_type"] = selected.Config.Type
+	title := result.Title
+	if title == "" {
+		title = input.URL.String()
+	}
+	return &PipelineResult{
+		Source:      input.URL.String(),
+		URL:         result.URL,
+		Title:       title,
+		Content:     content,
+		TextContent: content,
+		Format:      format,
+		FetchedAt:   time.Now(),
+		WordCount:   wordCount,
+		ContentType: reader.GuessContentType(input.URL.String(), "", metadata),
+		ExtractMode: "provider:" + selected.ID,
+		Quality:     assessQuality(wordCount, cfg.Reader.MinContentLength, "provider:"+selected.ID),
+		Metadata:    metadata,
+	}, nil
 }
 
 func validateReaderFlags(extractMode string, format string) error {

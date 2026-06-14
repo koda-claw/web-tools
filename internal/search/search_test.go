@@ -3,6 +3,7 @@ package search
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -167,8 +168,9 @@ func (m *mockEngine) Query(_ string, opts SearchOptions) ([]RawResult, error) {
 
 func makeConfiguredTestSearch(cfg config.SearchConfig, engines ...Engine) *Search {
 	return &Search{
-		engines: engines,
-		config:  cfg,
+		engines:   engines,
+		config:    cfg,
+		providers: config.DefaultConfig().Providers,
 	}
 }
 
@@ -176,10 +178,13 @@ func makeTestSearch(engines ...Engine) *Search {
 	return &Search{
 		engines: engines,
 		config: config.SearchConfig{
-			DefaultLimit:  5,
-			DefaultLocale: "auto",
-			DefaultEngine: "auto",
+			DefaultLimit:         5,
+			DefaultLocale:        "auto",
+			DefaultEngine:        "auto",
+			DefaultProvider:      "auto",
+			DefaultProviderChain: []string{"searxng", "duckduckgo"},
 		},
+		providers: config.DefaultConfig().Providers,
 	}
 }
 
@@ -331,6 +336,158 @@ func TestSearchExplicitOptionsOverrideConfig(t *testing.T) {
 	assert.Equal(t, "en-US", sx.lastOpts.Locale)
 	assert.Equal(t, "news", sx.lastOpts.Category)
 	assert.Equal(t, "week", sx.lastOpts.TimeRange)
+}
+
+func TestSearchProviderOptionSelectsEngine(t *testing.T) {
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeTestSearch(&mockEngine{name: "searxng", healthErr: errors.New("should not be called")}, ddg)
+
+	resp, err := s.Do("test", SearchOptions{Provider: "duckduckgo"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Equal(t, "duckduckgo", resp.Provider)
+}
+
+func TestSearchProviderChainSkipsUnconfiguredRemoteProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Search.DefaultProviderChain = []string{"searxng", "bigmodel", "duckduckgo"}
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		AuthEnv:      "ZHIPU_APIKEY",
+		EnabledIfEnv: "ZHIPU_APIKEY",
+		Capabilities: []string{"search"},
+	}
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := &Search{
+		engines: []Engine{
+			&mockEngine{name: "searxng", queryResult: nil},
+			ddg,
+		},
+		config:    cfg.Search,
+		providers: cfg.Providers,
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "auto"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	require.Len(t, resp.ProviderChain, 3)
+	assert.Equal(t, "bigmodel", resp.ProviderChain[1].Provider)
+	assert.Equal(t, "skipped:not_configured", resp.ProviderChain[1].Status)
+}
+
+func TestSearchProviderChainUsesConfiguredMCPProvider(t *testing.T) {
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Contains(t, r.Header.Get("Accept"), "text/event-stream")
+		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+		var req map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		switch req["method"] {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
+		case "notifications/initialized":
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
+		case "tools/call":
+			text, _ := json.Marshal(`[{"title":"MCP Result","link":"https://example.com","content":"via MCP","refer":"ref_1"}]`)
+			payload, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": string(text)}},
+					"isError": false,
+				},
+			})
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
+		default:
+			t.Fatalf("unexpected method %v", req["method"])
+		}
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Search.DefaultProviderChain = []string{"bigmodel", "duckduckgo"}
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		AuthEnv:      "ZHIPU_APIKEY",
+		EnabledIfEnv: "ZHIPU_APIKEY",
+		Capabilities: []string{"search"},
+		Search:       &config.ProviderEndpointConfig{URL: server.URL, Tool: "web_search_prime"},
+	}
+	s := &Search{
+		engines: []Engine{
+			&mockEngine{name: "duckduckgo", healthErr: errors.New("should not be called")},
+		},
+		config:    cfg.Search,
+		providers: cfg.Providers,
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "auto"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "bigmodel", resp.Engine)
+	assert.Equal(t, "bigmodel", resp.Provider)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "MCP Result", resp.Results[0].Title)
+}
+
+func TestSearchExplicitMCPProvider(t *testing.T) {
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+		var req map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		switch req["method"] {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
+		case "notifications/initialized":
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
+		case "tools/call":
+			text, _ := json.Marshal(`[{"title":"Explicit MCP","link":"https://example.com","content":"via MCP","refer":"ref_1"}]`)
+			payload, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": string(text)}},
+					"isError": false,
+				},
+			})
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
+		}
+	}))
+	defer server.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		AuthEnv:      "ZHIPU_APIKEY",
+		Capabilities: []string{"search"},
+		Search:       &config.ProviderEndpointConfig{URL: server.URL, Tool: "web_search_prime"},
+	}
+	s := &Search{
+		config:    cfg.Search,
+		providers: cfg.Providers,
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "bigmodel"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "bigmodel", resp.Engine)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "Explicit MCP", resp.Results[0].Title)
 }
 
 func TestSearchUnknownEngineError(t *testing.T) {

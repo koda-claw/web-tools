@@ -21,6 +21,13 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, DefaultSearchLimit, cfg.Search.DefaultLimit)
 	assert.Equal(t, "auto", cfg.Search.DefaultLocale)
 	assert.Equal(t, "auto", cfg.Search.DefaultEngine)
+	assert.Equal(t, "auto", cfg.Search.DefaultProvider)
+	assert.Equal(t, []string{"searxng", "duckduckgo"}, cfg.Search.DefaultProviderChain)
+	assert.Equal(t, "auto", cfg.Reader.DefaultProvider)
+	assert.Equal(t, []string{"builtin-reader"}, cfg.Reader.DefaultProviderChain)
+	assert.Contains(t, cfg.Providers, "searxng")
+	assert.Contains(t, cfg.Providers, "duckduckgo")
+	assert.Contains(t, cfg.Providers, "builtin-reader")
 }
 
 func TestLoad_WithNoConfigFiles(t *testing.T) {
@@ -59,6 +66,57 @@ func TestLoad_WithLocalConfigFile(t *testing.T) {
 	assert.Equal(t, "zh-CN", cfg.Search.DefaultLocale)
 	assert.Equal(t, "duckduckgo", cfg.Search.DefaultEngine)
 	assert.False(t, cfg.Reader.BrowserFallback)
+}
+
+func TestLoad_WithProviderConfig(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	os.WriteFile("web-tools.json", []byte(`{
+		"providers": {
+			"bigmodel": {
+				"type": "mcp",
+				"auth_env": "ZHIPU_APIKEY",
+				"enabled_if_env": "ZHIPU_APIKEY",
+				"timeout": 30,
+				"capabilities": ["search", "reader"],
+				"search": {
+					"url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+					"tool": "web_search_prime"
+				},
+				"reader": {
+					"url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+					"tool": "webReader"
+				}
+			}
+		},
+		"search": {
+			"default_provider": "auto",
+			"default_provider_chain": ["searxng", "bigmodel", "duckduckgo"]
+		},
+		"reader": {
+			"default_provider": "auto",
+			"default_provider_chain": ["builtin-reader", "bigmodel"]
+		}
+	}`), 0644)
+
+	cfg, err := Load()
+	assert.NoError(t, err)
+
+	provider := cfg.Providers["bigmodel"]
+	assert.Equal(t, "mcp", provider.Type)
+	assert.Equal(t, "ZHIPU_APIKEY", provider.AuthEnv)
+	assert.Equal(t, "ZHIPU_APIKEY", provider.EnabledIfEnv)
+	assert.Equal(t, 30, provider.Timeout)
+	assert.Equal(t, []string{"search", "reader"}, provider.Capabilities)
+	assert.Equal(t, "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp", provider.Search.URL)
+	assert.Equal(t, "web_search_prime", provider.Search.Tool)
+	assert.Equal(t, "https://open.bigmodel.cn/api/mcp/web_reader/mcp", provider.Reader.URL)
+	assert.Equal(t, "webReader", provider.Reader.Tool)
+	assert.Equal(t, []string{"searxng", "bigmodel", "duckduckgo"}, cfg.Search.DefaultProviderChain)
+	assert.Equal(t, []string{"builtin-reader", "bigmodel"}, cfg.Reader.DefaultProviderChain)
 }
 
 func TestLoad_LocalOverridesUser(t *testing.T) {
@@ -195,4 +253,47 @@ func TestLoad_WebToolsConfigOverride(t *testing.T) {
 	assert.Equal(t, 9, cfg.Search.DefaultLimit)
 	assert.Equal(t, "zh-CN", cfg.Search.DefaultLocale)
 	assert.Equal(t, "duckduckgo", cfg.Search.DefaultEngine)
+}
+
+func TestLoad_WebToolsConfigOverridesProviderConfig(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origDir)
+
+	os.WriteFile("web-tools.json", []byte(`{
+		"providers": {
+			"bigmodel": {
+				"type": "mcp",
+				"auth_env": "OLD_KEY",
+				"timeout": 10,
+				"search": {"url": "https://old.example/mcp", "tool": "oldTool"}
+			}
+		},
+		"search": {"default_provider_chain": ["searxng", "duckduckgo"]}
+	}`), 0644)
+
+	overridePath := filepath.Join(dir, "override.json")
+	os.WriteFile(overridePath, []byte(`{
+		"providers": {
+			"bigmodel": {
+				"auth_env": "ZHIPU_APIKEY",
+				"timeout": 20,
+				"search": {"tool": "web_search_prime"}
+			}
+		},
+		"search": {"default_provider_chain": ["bigmodel", "duckduckgo"]}
+	}`), 0644)
+	t.Setenv("WEB_TOOLS_CONFIG", overridePath)
+
+	cfg, err := Load()
+	assert.NoError(t, err)
+
+	provider := cfg.Providers["bigmodel"]
+	assert.Equal(t, "mcp", provider.Type)
+	assert.Equal(t, "ZHIPU_APIKEY", provider.AuthEnv)
+	assert.Equal(t, 20, provider.Timeout)
+	assert.Equal(t, "https://old.example/mcp", provider.Search.URL)
+	assert.Equal(t, "web_search_prime", provider.Search.Tool)
+	assert.Equal(t, []string{"bigmodel", "duckduckgo"}, cfg.Search.DefaultProviderChain)
 }

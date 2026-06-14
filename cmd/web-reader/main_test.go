@@ -2,6 +2,9 @@ package webreader
 
 import (
 	jsonpkg "encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/provider"
 	"github.com/koda-claw/web-tools/internal/reader"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +60,86 @@ func TestValidateReaderFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateReaderProviderBuiltin(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	assert.NoError(t, validateReaderProvider(cfg, "auto"))
+	assert.NoError(t, validateReaderProvider(cfg, "builtin-reader"))
+}
+
+func TestValidateReaderProviderRejectsRemoteUntilAdapterEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		Capabilities: []string{"reader"},
+	}
+
+	err := validateReaderProvider(cfg, "bigmodel")
+
+	assert.NoError(t, err)
+}
+
+func TestValidateReaderProviderRemoteMissingAuth(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		AuthEnv:      "ZHIPU_APIKEY",
+		Capabilities: []string{"reader"},
+	}
+
+	err := validateReaderProvider(cfg, "bigmodel")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "provider auth is not configured")
+}
+
+func TestHandleProviderURLInputMCP(t *testing.T) {
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+		var req map[string]any
+		require.NoError(t, jsonpkg.NewDecoder(r.Body).Decode(&req))
+		switch req["method"] {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
+		case "notifications/initialized":
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
+		case "tools/call":
+			text, _ := jsonpkg.Marshal(`{"title":"Example","url":"https://example.com","content":"Provider body","metadata":{"site":"example"}}`)
+			payload, _ := jsonpkg.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": string(text)}},
+					"isError": false,
+				},
+			})
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
+		default:
+			t.Fatalf("unexpected method %v", req["method"])
+		}
+	}))
+	defer server.Close()
+	input, err := reader.ParseInput("https://example.com")
+	require.NoError(t, err)
+
+	result, err := handleProviderURLInput(input, config.DefaultConfig(), provider.Provider{
+		ID: "bigmodel",
+		Config: config.ProviderConfig{
+			Type:    "mcp",
+			AuthEnv: "ZHIPU_APIKEY",
+			Reader:  &config.ProviderEndpointConfig{URL: server.URL, Tool: "webReader"},
+		},
+	}, "markdown")
+
+	require.NoError(t, err)
+	assert.Equal(t, "Example", result.Title)
+	assert.Equal(t, "Provider body", result.Content)
+	assert.Equal(t, "bigmodel", result.Metadata["provider"])
+	assert.Equal(t, "provider:bigmodel", result.ExtractMode)
 }
 
 func TestPipelineResultRenderers(t *testing.T) {

@@ -2,14 +2,14 @@
 
 Local-first web search and reading CLI for AI agents.
 
-Zero cost. No API keys. No third-party dependencies.
+Zero cost by default. No API keys required for the local-first path.
 
 [Releases](https://github.com/koda-claw/web-tools/releases)
 
 ## What it does
 
-- **web-search**: Search the web via DuckDuckGo Lite by default, with optional local SearXNG
-- **web-reader**: Extract readable content from URLs or convert local files (PDF, DOCX, PPTX, XLSX) to Markdown
+- **web-search**: Search the web via DuckDuckGo Lite by default, optional local SearXNG, or configured MCP providers
+- **web-reader**: Extract readable content from URLs or convert local files (PDF, DOCX, PPTX, XLSX) to Markdown, with optional MCP providers
 
 ## Agent Quick Start
 
@@ -102,9 +102,11 @@ npm i -g agent-browser
 web-tools web-search "latest AI news"
 web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
+web-tools web-search "golang readability" --provider duckduckgo --json
 
 # Read a URL
 web-tools web-reader https://example.com/article
+web-tools web-reader https://example.com/article --provider builtin-reader
 
 # Convert a file
 web-tools web-reader ./report.pdf
@@ -147,13 +149,17 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
     "default_timeout": 15,
     "browser_fallback": true,
     "markitdown_path": "markitdown",
-    "agent_browser_path": "agent-browser"
+    "agent_browser_path": "agent-browser",
+    "default_provider": "auto",
+    "default_provider_chain": ["builtin-reader"]
   },
   "search": {
     "searxng_url": "http://localhost:8888",
     "default_limit": 5,
     "default_locale": "auto",
-    "default_engine": "auto"
+    "default_engine": "auto",
+    "default_provider": "auto",
+    "default_provider_chain": ["searxng", "duckduckgo"]
   }
 }
 ```
@@ -161,6 +167,55 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
 CLI flags override config defaults when provided. `--format=html` is only available when extraction produced HTML; plain text and converted local files return a structured input error instead of generated wrapper HTML.
 
 `web-reader --json` includes a `quality` object with extraction score, word count, minimum word threshold, fallback recommendation, and reasons. Sparse extraction warnings are written to stderr so stdout remains machine-consumable.
+
+### Provider configuration
+
+`--provider` is the preferred selector for new integrations. `--engine` remains supported for compatibility with `auto`, `duckduckgo`, and `searxng`.
+
+The default no-key path stays local-first:
+
+```text
+search auto: searxng -> duckduckgo
+reader auto: builtin-reader
+```
+
+Optional MCP providers can be enabled through config. For BigModel/Zhipu:
+
+```json
+{
+  "providers": {
+    "bigmodel": {
+      "type": "mcp",
+      "auth_env": "ZHIPU_APIKEY",
+      "enabled_if_env": "ZHIPU_APIKEY",
+      "timeout": 30,
+      "capabilities": ["search", "reader"],
+      "search": {
+        "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+        "tool": "web_search_prime"
+      },
+      "reader": {
+        "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+        "tool": "webReader"
+      }
+    }
+  },
+  "search": {
+    "default_provider_chain": ["searxng", "bigmodel", "duckduckgo"]
+  }
+}
+```
+
+Then run:
+
+```bash
+export ZHIPU_APIKEY=...
+web-tools doctor --json
+web-tools web-search "Go readability library" --provider bigmodel --json
+web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
+```
+
+Secrets are read only from environment variables. `doctor --json` reports whether auth is configured, but never prints the token value.
 
 ## Install as Agent Skill
 
@@ -188,7 +243,32 @@ After installing the skill, ask the agent to use `web-tools` for web search,
 webpage reading, article extraction, or file-to-Markdown conversion. The skill
 contains the Agent research workflow.
 
+## Provider Development
+
+To add a new search or reader backend, start with
+[`docs/provider-plugin-development-guide.md`](docs/provider-plugin-development-guide.md).
+The provider model is configuration-first: use `providers.<id>` with an existing
+adapter when possible, and add adapter code only when the protocol or response
+mapping cannot be reused.
+
 ## Architecture
+
+```mermaid
+flowchart TB
+    Agent["Agent / Skill"] --> CLI["web-tools CLI"]
+    CLI --> Search["web-search"]
+    CLI --> Reader["web-reader"]
+    CLI --> Doctor["doctor"]
+    Config["Config\nproviders + defaults"] --> Registry["Provider Registry"]
+    Search --> Registry
+    Reader --> Registry
+    Doctor --> Registry
+    Registry --> Builtins["builtin providers\nsearxng / duckduckgo / builtin-reader"]
+    Registry --> MCP["MCP adapter\nStreamable HTTP + SSE + JSON-RPC"]
+    MCP --> BigModel["BigModel/Zhipu MCP"]
+    Builtins --> Output["stable JSON output"]
+    MCP --> Output
+```
 
 ```
 web-tools
@@ -197,6 +277,7 @@ web-tools
 ├── internal/
 │   ├── config/         # Configuration loading (file + env + defaults)
 │   ├── errors/         # Structured error handling for agent consumption
+│   ├── provider/       # Provider registry and MCP adapters
 │   ├── reader/         # HTTP fetch, readability extraction, cache, converter, browser fallback
 │   └── search/         # SearXNG client, result parsing, output formatting
 ├── docker/             # SearXNG docker-compose.yml + settings

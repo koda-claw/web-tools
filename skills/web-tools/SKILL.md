@@ -1,12 +1,12 @@
 ---
 name: web-tools
-description: Local-first web search and reading CLI for AI agents. Zero cost, no API keys. Use this skill whenever the user asks to search the web, find information online, read an article or webpage, extract content from a URL, or convert files (PDF, DOCX, PPTX, XLSX) to Markdown. Trigger on phrases like "search for", "look up", "find information", "read this article", "what does this page say", "search the web", "google this", or any task that needs web information retrieval.
+description: Local-first web search and reading CLI for AI agents. Zero cost by default, no API keys required for the built-in path. Use this skill whenever the user asks to search the web, find information online, read an article or webpage, extract content from a URL, or convert files (PDF, DOCX, PPTX, XLSX) to Markdown. Trigger on phrases like "search for", "look up", "find information", "read this article", "what does this page say", "search the web", "google this", or any task that needs web information retrieval.
 allowed-tools: Bash(web-tools:*), Bash(command -v:*), Bash(go version:*), Bash(go build:*), Bash(git clone:*), Bash(curl:*), Bash(chmod:*), Bash(mkdir:*), Bash(cp:*), Bash(mv:*), Bash(docker compose:*)
 ---
 
 # web-tools — Local-first web search & reading CLI
 
-Local-first web search and reading tools for AI agents. Zero cost, no API keys, no third-party dependencies.
+Local-first web search and reading tools for AI agents. Zero cost by default; no API keys are required for the built-in path.
 
 ## When to use
 
@@ -47,6 +47,7 @@ workflow.
 - **web-search**: Works standalone via DuckDuckGo Lite (zero dependencies). Optional advanced backend:
   - SearXNG (aggregates Google, Bing, DDG): requires Docker → `cd docker && docker compose up -d`
   - Verify SearXNG: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
+  - Optional MCP providers can be configured through `providers.<id>` and selected with `--provider`
 
 ## Building
 
@@ -99,7 +100,8 @@ web-tools web-search "<query>" [flags]
 | `--locale` | string | `auto` | Language preference: `zh-CN`, `en-US`, `auto` |
 | `--category` | string | `general` | Category: `general` / `images` / `news` / `videos` / `files` |
 | `--time-range` | string | `any` | Time filter: `any` / `day` / `week` / `month` / `year` |
-| `--engine` | string | `auto` | Search engine: `auto` / `duckduckgo` / `searxng` |
+| `--provider` | string | `auto` | Search provider: `auto` / `duckduckgo` / `searxng` / configured provider id |
+| `--engine` | string | `auto` | Compatibility alias for built-in search engines |
 | `--include-domain` | string list | — | Only include matching domains; repeat or comma-separate |
 | `--exclude-domain` | string list | — | Exclude matching domains; repeat or comma-separate |
 
@@ -123,7 +125,14 @@ web-tools web-search "Go readability library" -o /tmp/search-results.md
 # Restrict or exclude domains
 web-tools web-search "Go readability library" --include-domain github.com
 web-tools web-search "AI news" --exclude-domain reddit.com,medium.com
+
+# Use an explicit provider
+web-tools web-search "Go readability library" --provider duckduckgo --json
 ```
+
+If `--provider` and `--engine` are both explicitly passed with different values,
+the command fails with a structured input error. Prefer `--provider` in new
+workflows.
 
 ### Exit codes
 
@@ -161,6 +170,7 @@ web-tools web-reader <input> [flags]
 | `--session` | string | — | agent-browser session name (for login state) |
 | `--user-agent` | string | built-in | Custom User-Agent string |
 | `--format` | string | `markdown` | Output format: `markdown` / `text` / `html` |
+| `--provider` | string | `auto` | Reader provider: `auto` / `builtin-reader` / configured MCP provider id |
 
 Format behavior:
 - `markdown`: metadata comments plus extracted content (default)
@@ -221,6 +231,9 @@ web-tools web-reader ./report.pdf
 # Convert office documents to Markdown
 web-tools web-reader ./slides.pptx
 web-tools web-reader ./data.xlsx
+
+# Use a configured MCP reader provider
+web-tools web-reader https://example.com/article --provider bigmodel --json
 ```
 
 ### Exit codes
@@ -327,13 +340,17 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
     "default_timeout": 15,
     "browser_fallback": true,
     "markitdown_path": "markitdown",
-    "agent_browser_path": "agent-browser"
+    "agent_browser_path": "agent-browser",
+    "default_provider": "auto",
+    "default_provider_chain": ["builtin-reader"]
   },
   "search": {
     "searxng_url": "http://localhost:8888",
     "default_limit": 5,
     "default_locale": "auto",
-    "default_engine": "auto"
+    "default_engine": "auto",
+    "default_provider": "auto",
+    "default_provider_chain": ["searxng", "duckduckgo"]
   }
 }
 ```
@@ -346,3 +363,39 @@ Environment variables override config file:
 - `MARKITDOWN_PATH` — Path to markitdown binary
 
 These overrides are applied by both `web-tools web-search` and `web-tools web-reader` at runtime.
+
+### Optional MCP provider config
+
+The built-in path does not require API keys. Optional remote providers must be
+configured explicitly and should read secrets only from environment variables.
+
+```json
+{
+  "providers": {
+    "bigmodel": {
+      "type": "mcp",
+      "auth_env": "ZHIPU_APIKEY",
+      "enabled_if_env": "ZHIPU_APIKEY",
+      "capabilities": ["search", "reader"],
+      "search": {
+        "url": "https://open.bigmodel.cn/api/mcp/web_search_prime/mcp",
+        "tool": "web_search_prime"
+      },
+      "reader": {
+        "url": "https://open.bigmodel.cn/api/mcp/web_reader/mcp",
+        "tool": "webReader"
+      }
+    }
+  }
+}
+```
+
+```bash
+export ZHIPU_APIKEY=...
+web-tools doctor --json
+web-tools web-search "Go readability library" --provider bigmodel --json
+web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bigmodel --json
+```
+
+Do not parse raw MCP responses in the agent. The CLI normalizes MCP responses
+into the regular `web-search --json` and `web-reader --json` envelopes.

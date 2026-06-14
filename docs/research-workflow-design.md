@@ -32,7 +32,7 @@
 Skill 应指导 Agent 按以下顺序执行：
 
 1. 必要时运行 `web-tools doctor --json` 检查配置、缓存目录和可选依赖。
-2. 使用 `web-tools web-search "<query>" --json` 获取结构化候选来源。
+2. 使用 `web-tools web-search "<query>" --json` 获取结构化候选来源。Provider 架构落地后，可通过 `--provider` 或配置选择搜索后端。
 3. 根据标题、摘要、域名、排名和任务需求选择 URL；必要时使用 `--include-domain` 或 `--exclude-domain` 收窄来源。
 4. 对选中 URL 使用 `web-tools web-reader "<url>" --json` 读取内容。
 5. 检查 `quality.score`、`quality.needs_fallback`、`quality.word_count` 和 stderr 警告；只有低质量或疑似 JS 渲染页面才使用 `--browser` 重试。
@@ -96,7 +96,8 @@ web-tools web-research <query> [flags]
 |------|--------|------|
 | `--limit` | `5` | 搜索阶段检查的结果数量 |
 | `--read-limit` | `3` | 从搜索结果中选中并读取的 URL 数量 |
-| `--engine` | 配置默认值 | 搜索引擎策略 |
+| `--provider` | 配置默认值 | 搜索 provider 策略 |
+| `--engine` | 配置默认值 | 兼容旧搜索引擎参数 |
 | `--locale` | 配置默认值 | 搜索 locale |
 | `--include-domain` | 空 | 只保留匹配域名 |
 | `--exclude-domain` | 空 | 排除匹配域名 |
@@ -115,6 +116,7 @@ web-tools web-research <query> [flags]
     "searched_at": "2026-06-14T00:00:00Z",
     "search": {
       "engine": "duckduckgo",
+      "provider": "duckduckgo",
       "total": 5,
       "results": []
     },
@@ -147,6 +149,24 @@ web-tools web-research <query> [flags]
 - 不隐藏单个搜索或读取错误。
 - 不强依赖在线 SearXNG 或浏览器依赖。
 - 不替代 `web-search` 或 `web-reader`。
+
+## Provider 架构影响
+
+Provider / Plugin 架构落地后，research workflow 的职责边界不变：
+
+- `web-search` 仍负责候选发现。
+- `web-reader` 仍负责正文读取和质量信号。
+- Agent 仍负责来源选择、交叉验证、引用和最终表达。
+
+变化只在后端选择层：
+
+- 默认无 key 路径继续本地优先。
+- `--provider auto` 使用配置中的 provider chain。
+- `--engine` 保留为兼容参数，但新文档优先使用 `--provider`。
+- 如果 `--provider` 和 `--engine` 同时显式传入且冲突，应返回参数错误，不在 research workflow 中猜测优先级。
+- 远程 provider，例如 BigModel MCP、Tavily、Exa 或企业内部搜索，应通过显式配置启用。
+- 低质量 reader fallback 到远程 provider 必须通过配置显式开启，并保留 `quality` 和 attempts metadata，不能把失败或降级过程隐藏在最终摘要里。
+- BigModel MCP 实测返回 `text/event-stream`，Agent 不应直接解析原始 MCP 响应；应等 CLI provider adapter 统一映射后再作为 research backend 使用。
 
 ## 批准门槛
 

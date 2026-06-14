@@ -1,6 +1,7 @@
 package search
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -12,12 +13,15 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/provider"
+	mcpprovider "github.com/koda-claw/web-tools/internal/provider/mcp"
 )
 
 // Search is the main entry point for web search.
 type Search struct {
-	engines []Engine
-	config  config.SearchConfig
+	engines   []Engine
+	config    config.SearchConfig
+	providers map[string]config.ProviderConfig
 }
 
 // SearchOptions holds user-facing search options.
@@ -27,6 +31,7 @@ type SearchOptions struct {
 	Category  string // "general" / "images" / "news" / "videos" / "files"
 	TimeRange string // "" / "any" / "day" / "week" / "month" / "year"
 	Engine    string // "auto" / "duckduckgo" / "searxng"
+	Provider  string // "auto" / provider id
 	// IncludeDomains and ExcludeDomains filter normalized result hostnames.
 	// A filter value matches the exact domain and any subdomain.
 	IncludeDomains []string
@@ -46,12 +51,14 @@ type SearchResult struct {
 
 // SearchResponse is the final output structure.
 type SearchResponse struct {
-	Query      string         `json:"query"`
-	Engine     string         `json:"engine"`
-	Locale     string         `json:"locale"`
-	Total      int            `json:"total"`
-	Results    []SearchResult `json:"results"`
-	SearchedAt time.Time      `json:"searched_at"`
+	Query         string             `json:"query"`
+	Engine        string             `json:"engine"`
+	Provider      string             `json:"provider,omitempty"`
+	ProviderChain []provider.Attempt `json:"provider_chain,omitempty"`
+	Locale        string             `json:"locale"`
+	Total         int                `json:"total"`
+	Results       []SearchResult     `json:"results"`
+	SearchedAt    time.Time          `json:"searched_at"`
 }
 
 // NewSearch creates a new Search instance with all supported engines.
@@ -62,7 +69,20 @@ func NewSearch(cfg config.SearchConfig) *Search {
 			NewSearXNGEngine(cfg.SearXNGURL),
 			NewDuckDuckGoEngine(),
 		},
-		config: cfg,
+		config:    cfg,
+		providers: config.DefaultConfig().Providers,
+	}
+}
+
+// NewSearchWithConfig creates a search instance with top-level provider config.
+func NewSearchWithConfig(cfg config.Config) *Search {
+	return &Search{
+		engines: []Engine{
+			NewSearXNGEngine(cfg.Search.SearXNGURL),
+			NewDuckDuckGoEngine(),
+		},
+		config:    cfg.Search,
+		providers: cfg.Providers,
 	}
 }
 
@@ -91,6 +111,17 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 
 	engineName := opts.Engine
+	providerMode := false
+	if opts.Provider != "" {
+		engineName = opts.Provider
+		providerMode = true
+	}
+	if engineName == "" {
+		engineName = s.config.DefaultProvider
+		if engineName != "" {
+			providerMode = true
+		}
+	}
 	if engineName == "" {
 		engineName = s.config.DefaultEngine
 	}
@@ -100,22 +131,62 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 
 	// Select engines to try based on the requested mode.
 	var candidates []Engine
+	var providerAttempts []provider.Attempt
 	switch engineName {
 	case "auto":
 		candidates = s.engines
-	default:
-		for _, e := range s.engines {
-			if e.Name() == engineName {
-				candidates = []Engine{e}
-				break
+		if providerMode && len(s.config.DefaultProviderChain) > 0 {
+			reg, err := provider.NewRegistry(s.providers)
+			if err != nil {
+				return nil, err
+			}
+			providers, attempts, err := reg.ResolveChain(s.config.DefaultProviderChain, provider.CapabilitySearch)
+			providerAttempts = attempts
+			if err != nil {
+				return nil, err
+			}
+			candidates = enginesForProviders(s.engines, providers)
+			if len(candidates) == 0 {
+				return nil, apperrors.NewInputError(
+					"no search providers available",
+					"provider chain did not resolve to any enabled search providers",
+					[]string{"check search.default_provider_chain", "configure provider auth envs"},
+				)
 			}
 		}
-		if len(candidates) == 0 {
-			return nil, apperrors.NewInputError(
-				"unknown search engine",
-				fmt.Sprintf("got %q; supported: auto, duckduckgo, searxng", engineName),
-				[]string{"use --engine auto", "use --engine duckduckgo", "use --engine searxng"},
-			)
+	default:
+		if providerMode {
+			reg, err := provider.NewRegistry(s.providers)
+			if err != nil {
+				return nil, err
+			}
+			resolved, err := reg.Get(engineName, provider.CapabilitySearch)
+			if err != nil {
+				return nil, err
+			}
+			providerAttempts = []provider.Attempt{{Provider: resolved.ID, Status: provider.AttemptStatusSelected}}
+			candidates = enginesForProviders(s.engines, []provider.Provider{resolved})
+			if len(candidates) == 0 {
+				return nil, apperrors.NewInputError(
+					"search provider is not implemented",
+					fmt.Sprintf("provider %q is configured but no search adapter is available", engineName),
+					[]string{"use --provider auto", "check provider type and endpoint configuration"},
+				)
+			}
+		} else {
+			for _, e := range s.engines {
+				if e.Name() == engineName {
+					candidates = []Engine{e}
+					break
+				}
+			}
+			if len(candidates) == 0 {
+				return nil, apperrors.NewInputError(
+					"unknown search engine",
+					fmt.Sprintf("got %q; supported: auto, duckduckgo, searxng", engineName),
+					[]string{"use --engine auto", "use --engine duckduckgo", "use --engine searxng"},
+				)
+			}
 		}
 	}
 
@@ -191,13 +262,69 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 
 	return &SearchResponse{
-		Query:      query,
-		Engine:     usedEngine,
-		Locale:     opts.Locale,
-		Total:      len(results),
-		Results:    results,
-		SearchedAt: time.Now(),
+		Query:         query,
+		Engine:        usedEngine,
+		Provider:      usedEngine,
+		ProviderChain: providerAttempts,
+		Locale:        opts.Locale,
+		Total:         len(results),
+		Results:       results,
+		SearchedAt:    time.Now(),
 	}, nil
+}
+
+func enginesForProviders(engines []Engine, providers []provider.Provider) []Engine {
+	out := make([]Engine, 0, len(providers))
+	for _, p := range providers {
+		if p.Config.Type == "mcp" && p.Config.Search != nil {
+			out = append(out, &mcpSearchEngine{
+				id:     p.ID,
+				client: mcpprovider.NewClient(p.Config, os.Getenv(p.Config.AuthEnv)),
+			})
+			continue
+		}
+		for _, e := range engines {
+			if e.Name() == p.ID {
+				out = append(out, e)
+				break
+			}
+		}
+	}
+	return out
+}
+
+type mcpSearchEngine struct {
+	id     string
+	client *mcpprovider.Client
+}
+
+func (e *mcpSearchEngine) Name() string {
+	return e.id
+}
+
+func (e *mcpSearchEngine) HealthCheck() error {
+	return nil
+}
+
+func (e *mcpSearchEngine) Query(query string, opts SearchOptions) ([]RawResult, error) {
+	results, err := e.client.Search(context.Background(), query, mcpprovider.SearchOptions{
+		Locale:         opts.Locale,
+		TimeRange:      opts.TimeRange,
+		IncludeDomains: opts.IncludeDomains,
+	})
+	if err != nil {
+		return nil, err
+	}
+	raw := make([]RawResult, 0, len(results))
+	for _, result := range results {
+		raw = append(raw, RawResult{
+			Title:   result.Title,
+			URL:     result.URL,
+			Snippet: result.Snippet,
+			Source:  result.Source,
+		})
+	}
+	return raw, nil
 }
 
 func normalizeResults(rawResults []RawResult, engine string, opts SearchOptions) []SearchResult {

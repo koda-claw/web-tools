@@ -27,25 +27,39 @@ type Check struct {
 }
 
 type ConfigSummary struct {
-	Reader ReaderSummary `json:"reader"`
-	Search SearchSummary `json:"search"`
+	Providers map[string]ProviderSummary `json:"providers,omitempty"`
+	Reader    ReaderSummary              `json:"reader"`
+	Search    SearchSummary              `json:"search"`
+}
+
+type ProviderSummary struct {
+	Type           string   `json:"type"`
+	Capabilities   []string `json:"capabilities,omitempty"`
+	AuthEnv        string   `json:"auth_env,omitempty"`
+	AuthConfigured bool     `json:"auth_configured,omitempty"`
+	EnabledIfEnv   string   `json:"enabled_if_env,omitempty"`
+	Enabled        bool     `json:"enabled"`
 }
 
 type ReaderSummary struct {
-	CacheDir         string `json:"cache_dir"`
-	CacheTTL         int    `json:"cache_ttl"`
-	DefaultTimeout   int    `json:"default_timeout"`
-	BrowserFallback  bool   `json:"browser_fallback"`
-	MarkitdownPath   string `json:"markitdown_path"`
-	AgentBrowserPath string `json:"agent_browser_path"`
-	MinContentLength int    `json:"min_content_length"`
+	CacheDir             string   `json:"cache_dir"`
+	CacheTTL             int      `json:"cache_ttl"`
+	DefaultTimeout       int      `json:"default_timeout"`
+	BrowserFallback      bool     `json:"browser_fallback"`
+	MarkitdownPath       string   `json:"markitdown_path"`
+	AgentBrowserPath     string   `json:"agent_browser_path"`
+	MinContentLength     int      `json:"min_content_length"`
+	DefaultProvider      string   `json:"default_provider"`
+	DefaultProviderChain []string `json:"default_provider_chain"`
 }
 
 type SearchSummary struct {
-	SearXNGURL    string `json:"searxng_url"`
-	DefaultLimit  int    `json:"default_limit"`
-	DefaultLocale string `json:"default_locale"`
-	DefaultEngine string `json:"default_engine"`
+	SearXNGURL           string   `json:"searxng_url"`
+	DefaultLimit         int      `json:"default_limit"`
+	DefaultLocale        string   `json:"default_locale"`
+	DefaultEngine        string   `json:"default_engine"`
+	DefaultProvider      string   `json:"default_provider"`
+	DefaultProviderChain []string `json:"default_provider_chain"`
 }
 
 type Report struct {
@@ -141,6 +155,7 @@ func (c checker) Run() Report {
 		c.executableCheck("agent-browser", cfg.Reader.AgentBrowserPath, "optional browser fallback dependency"),
 		c.searxngCheck(cfg.Search.SearXNGURL),
 	}
+	checks = append(checks, providerChecks(*cfg)...)
 
 	return Report{
 		OK:     allRequiredChecksOK(checks),
@@ -216,22 +231,86 @@ func errorCheck(name string, message string, err error, details map[string]strin
 
 func summarizeConfig(cfg config.Config) ConfigSummary {
 	return ConfigSummary{
+		Providers: summarizeProviders(cfg.Providers),
 		Reader: ReaderSummary{
-			CacheDir:         cfg.Reader.CacheDir,
-			CacheTTL:         cfg.Reader.CacheTTL,
-			DefaultTimeout:   cfg.Reader.DefaultTimeout,
-			BrowserFallback:  cfg.Reader.BrowserFallback,
-			MarkitdownPath:   cfg.Reader.MarkitdownPath,
-			AgentBrowserPath: cfg.Reader.AgentBrowserPath,
-			MinContentLength: cfg.Reader.MinContentLength,
+			CacheDir:             cfg.Reader.CacheDir,
+			CacheTTL:             cfg.Reader.CacheTTL,
+			DefaultTimeout:       cfg.Reader.DefaultTimeout,
+			BrowserFallback:      cfg.Reader.BrowserFallback,
+			MarkitdownPath:       cfg.Reader.MarkitdownPath,
+			AgentBrowserPath:     cfg.Reader.AgentBrowserPath,
+			MinContentLength:     cfg.Reader.MinContentLength,
+			DefaultProvider:      cfg.Reader.DefaultProvider,
+			DefaultProviderChain: append([]string(nil), cfg.Reader.DefaultProviderChain...),
 		},
 		Search: SearchSummary{
-			SearXNGURL:    cfg.Search.SearXNGURL,
-			DefaultLimit:  cfg.Search.DefaultLimit,
-			DefaultLocale: cfg.Search.DefaultLocale,
-			DefaultEngine: cfg.Search.DefaultEngine,
+			SearXNGURL:           cfg.Search.SearXNGURL,
+			DefaultLimit:         cfg.Search.DefaultLimit,
+			DefaultLocale:        cfg.Search.DefaultLocale,
+			DefaultEngine:        cfg.Search.DefaultEngine,
+			DefaultProvider:      cfg.Search.DefaultProvider,
+			DefaultProviderChain: append([]string(nil), cfg.Search.DefaultProviderChain...),
 		},
 	}
+}
+
+func providerChecks(cfg config.Config) []Check {
+	checks := make([]Check, 0, len(cfg.Providers))
+	for id, provider := range cfg.Providers {
+		details := map[string]string{
+			"type":         provider.Type,
+			"capabilities": strings.Join(provider.Capabilities, ","),
+		}
+		if provider.AuthEnv != "" {
+			details["auth_env"] = provider.AuthEnv
+			details["auth_configured"] = fmt.Sprintf("%t", os.Getenv(provider.AuthEnv) != "")
+		}
+		if provider.EnabledIfEnv != "" {
+			details["enabled_if_env"] = provider.EnabledIfEnv
+			details["enabled"] = fmt.Sprintf("%t", os.Getenv(provider.EnabledIfEnv) != "")
+		} else {
+			details["enabled"] = "true"
+		}
+		status := StatusOK
+		message := "provider configured"
+		if provider.EnabledIfEnv != "" && os.Getenv(provider.EnabledIfEnv) == "" {
+			status = StatusWarn
+			message = "provider configured but activation env is missing"
+		}
+		checks = append(checks, Check{
+			Name:    "provider." + id,
+			Status:  status,
+			Message: message,
+			Details: details,
+		})
+	}
+	return checks
+}
+
+func summarizeProviders(providers map[string]config.ProviderConfig) map[string]ProviderSummary {
+	if len(providers) == 0 {
+		return nil
+	}
+	out := make(map[string]ProviderSummary, len(providers))
+	for id, provider := range providers {
+		enabled := true
+		if provider.EnabledIfEnv != "" {
+			enabled = os.Getenv(provider.EnabledIfEnv) != ""
+		}
+		authConfigured := false
+		if provider.AuthEnv != "" {
+			authConfigured = os.Getenv(provider.AuthEnv) != ""
+		}
+		out[id] = ProviderSummary{
+			Type:           provider.Type,
+			Capabilities:   append([]string(nil), provider.Capabilities...),
+			AuthEnv:        provider.AuthEnv,
+			AuthConfigured: authConfigured,
+			EnabledIfEnv:   provider.EnabledIfEnv,
+			Enabled:        enabled,
+		}
+	}
+	return out
 }
 
 func (r Report) RenderJSON() string {
@@ -257,6 +336,14 @@ func (r Report) RenderText() string {
 	sb.WriteString(fmt.Sprintf("  reader.cache_dir: %s\n", r.Config.Reader.CacheDir))
 	sb.WriteString(fmt.Sprintf("  reader.browser_fallback: %t\n", r.Config.Reader.BrowserFallback))
 	sb.WriteString(fmt.Sprintf("  search.default_engine: %s\n", r.Config.Search.DefaultEngine))
+	sb.WriteString(fmt.Sprintf("  search.default_provider: %s\n", r.Config.Search.DefaultProvider))
 	sb.WriteString(fmt.Sprintf("  search.searxng_url: %s\n", r.Config.Search.SearXNGURL))
+	if len(r.Config.Providers) > 0 {
+		sb.WriteString("Providers:\n")
+		for id, provider := range r.Config.Providers {
+			sb.WriteString(fmt.Sprintf("  %s: type=%s enabled=%t auth_env=%s auth_configured=%t\n",
+				id, provider.Type, provider.Enabled, provider.AuthEnv, provider.AuthConfigured))
+		}
+	}
 	return sb.String()
 }
