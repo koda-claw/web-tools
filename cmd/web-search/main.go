@@ -30,10 +30,10 @@ func Cmd() *cobra.Command {
 		Long: `Search the web using DuckDuckGo Lite (default, zero dependencies) or a local SearXNG
 instance (opt-in, requires Docker). Zero cost, no API keys.`,
 		Example: `  web-tools web-search "latest AI news"
-  web-tools web-search "人工智能最新进展" --locale zh-CN --time-range week
+  web-tools web-search "AI latest developments" --locale en-US --time-range week
   web-tools web-search "Tesla" --category news --time-range day --limit 10
   web-tools web-search "site:github.com go readability" --limit 3 --json
-  web-tools web-search "深度学习" --locale zh-CN --limit 3 -o /tmp/results.md
+  web-tools web-search "deep learning" --locale en-US --limit 3 -o /tmp/results.md
   web-tools web-search "climate change 2026" --time-range year --json`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
