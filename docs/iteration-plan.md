@@ -454,7 +454,7 @@ Update this section as tasks land.
 | Task 6 | Complete | Added `web-tools doctor` with human and JSON output for config, cache, optional MarkItDown, optional agent-browser, and optional SearXNG checks. Missing optional dependencies warn without failing. Verified with `go test ./cmd/doctor`. |
 | Task 7 | Complete | Added search domain include/exclude filters, URL normalization, result deduplication, and engine provenance helper coverage. Verified with `go test ./cmd/web-search ./internal/search`. |
 | Task 8 | Complete | Added reader quality metadata in JSON/Markdown output, clearer sparse-content warnings, and tests for quality scoring plus HTTP status fallback behavior. Verified with `go test ./cmd/web-reader ./internal/reader`. |
-| Task 9 | Planned | |
+| Task 9 | Complete | Added `docs/research-workflow-design.md` and recommended explicit `web-search` + `web-reader` composition for now. A future `web-research` command is gated on approved selection, retry, failure, and JSON policies. |
 
 ## Release Gate
 
