@@ -2,6 +2,8 @@
 
 [English](README.md)
 
+![web-tools hero](assets/images/web-tools-hero.png)
+
 面向 AI Agent 的本地优先网页搜索和网页读取 CLI。
 
 默认零成本，本地优先路径不需要 API key。
@@ -25,6 +27,8 @@
 6. 检查 `quality` metadata；只有内容稀疏或页面依赖 JS 渲染时，才用 `--browser` 重试。
 
 CLI 会输出明确的搜索、读取、质量和错误信号。Skill 负责指导 Agent 做来源选择、浏览器 fallback、部分失败处理和来源 URL 保留。
+
+![Agent research workflow](assets/images/agent-research-workflow.png)
 
 ## 安装
 
@@ -236,6 +240,8 @@ web-tools config provider add bigmodel \
 ```
 
 Secret 只从环境变量读取。`doctor --json` 会报告认证是否已配置，但不会打印 token 值。
+
+![Provider-ready architecture](assets/images/provider-architecture-visual.png)
 
 ## 安装为 Agent Skill
 

@@ -2,6 +2,8 @@
 
 [中文文档](README.zh-CN.md)
 
+![web-tools hero](assets/images/web-tools-hero.png)
+
 Local-first web search and reading CLI for AI agents.
 
 Zero cost by default. No API keys required for the local-first path.
@@ -27,6 +29,8 @@ If another agent only has this repository URL, have it follow this order:
 The CLI provides explicit search, read, quality, and error signals. The skill
 guides the agent on source selection, browser fallback, partial failures, and
 preserving source URLs.
+
+![Agent research workflow](assets/images/agent-research-workflow.png)
 
 ## Install
 
@@ -238,6 +242,8 @@ the environment variable name, not the token value. Equivalent JSON:
 ```
 
 Secrets are read only from environment variables. `doctor --json` reports whether auth is configured, but never prints the token value.
+
+![Provider-ready architecture](assets/images/provider-architecture-visual.png)
 
 ## Install as Agent Skill
 
