@@ -54,22 +54,41 @@ web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bi
 
 如果 `doctor --json` 看到 `auth_configured=false`，skill 应指导用户把 key 放入当前 shell 环境或 `~/.config/web-tools/.env`。
 
-## Env 加载策略
+## Config 与 Env 加载策略
 
-加载顺序：
+这里需要分清两条链路：
 
-1. 默认配置。
-2. 用户配置：`~/.config/web-tools/config.json`。
+- **配置 overlay 链路**：决定 `providers`、`search`、`reader` 等配置字段最终取值。
+- **env 注入链路**：决定 `auth_env`、`enabled_if_env`、`SEARXNG_URL` 等变量在当前 `web-tools` 进程里是否可见。
+
+### 配置 overlay 优先级
+
+配置优先级保持现有模型，高优先级覆盖低优先级：
+
+1. `WEB_TOOLS_CONFIG` 指向的配置文件。
+2. 当前进程环境变量映射出的配置项，例如 `SEARXNG_URL`、`WEB_READER_TIMEOUT`。
 3. 本地配置：`./web-tools.json`。
-4. 用户 env file：`~/.config/web-tools/.env`。
-5. 显式 env file：`WEB_TOOLS_ENV=/path/to/.env`。
-6. 当前进程环境变量。
-7. `WEB_TOOLS_CONFIG` 指向的配置文件覆盖配置项，但不覆盖 env file 中已加载的 secret；显式 shell env 仍最高优先级。
+4. 用户配置：`~/.config/web-tools/config.json`。
+5. 默认配置。
 
 说明：
 
-- env file 中的变量只在当前 `web-tools` 进程内生效。
-- 如果当前进程已经存在同名环境变量，env file 不覆盖它。
+- `WEB_TOOLS_CONFIG` 只覆盖配置项，不保存也不覆盖 secret 值。
+- env file 加载后，如果其中包含 `SEARXNG_URL` 这类配置环境变量，应参与第 2 层环境变量覆盖。
+- 如果当前 shell 已经存在同名环境变量，env file 不覆盖它，因此 shell env 仍然是 env 值来源里的最高优先级。
+
+### Env 注入优先级
+
+env file 只把变量注入当前 `web-tools` 进程，不会修改用户 shell，不会写入 `config.json`。
+
+1. 当前进程环境变量：已存在时保持原值。
+2. 显式 env file：`WEB_TOOLS_ENV=/path/to/.env`。
+3. 用户 env file：`~/.config/web-tools/.env`。
+
+说明：
+
+- 加载顺序可以是用户 env file 后显式 env file，但写入变量时必须遵守“不覆盖已存在 env”的规则。因此显式 `WEB_TOOLS_ENV` 可以补齐用户 env file 缺失的变量，但不能覆盖当前 shell 已有变量。
+- 如果用户 env file 和显式 env file 都定义同名变量，建议显式 env file 优先；实现上可以先加载显式 env file，再加载用户 env file，或在加载用户 env file 时记录来源并允许显式 env file 覆盖用户 env file，但两者都不能覆盖启动时已有的 shell env。
 - env file 支持简单格式：
 
 ```env
@@ -99,6 +118,10 @@ SEARXNG_URL=http://localhost:8888
 - 默认读取 `~/.config/web-tools/.env`。
 - 支持 `WEB_TOOLS_ENV=/path/to/.env` 显式指定。
 - 当前 shell 环境变量优先于 env file。
+- `config.Load()` 建议拆成三个阶段，避免优先级漂移：
+  1. 记录启动时已有的 env key 集合。
+  2. 加载 env file，只补齐未被启动 shell 设置的 key。
+  3. 按现有配置 overlay 顺序合并 defaults/user/local/env/`WEB_TOOLS_CONFIG`。
 - 解析失败返回 structured config warning 或 error 的策略需要固定：
   - 文件不存在：忽略。
   - 行格式错误：返回 config error，避免 silently misconfigured。
@@ -109,15 +132,21 @@ SEARXNG_URL=http://localhost:8888
 - 用户把 `ZHIPU_APIKEY=...` 写入 `~/.config/web-tools/.env` 后，`doctor --json` 显示 `auth_configured=true`。
 - `web-tools web-search ... --provider bigmodel --json` 能读取 env file 中的 key。
 - shell 中已有 `ZHIPU_APIKEY` 时，shell 值优先。
+- `WEB_TOOLS_CONFIG` 仍能覆盖 `providers`、`search`、`reader` 配置字段。
+- env file 中的 `SEARXNG_URL` 可作为环境变量配置项生效，但不能覆盖启动 shell 中已有的 `SEARXNG_URL`。
 - 不打印 key 值。
 
 **测试用例**
 
 - 单元测试：解析 `KEY=value`、带引号 value、空行、注释。
 - 单元测试：env file 不覆盖已有 env。
+- 单元测试：显式 `WEB_TOOLS_ENV` 比用户 env file 优先，但不覆盖启动 shell env。
+- 单元测试：`WEB_TOOLS_CONFIG` 覆盖 `config.json`/`web-tools.json` 中的配置字段。
+- 单元测试：env file 注入的 `SEARXNG_URL` 能参与配置环境变量覆盖。
 - 单元测试：格式错误返回明确错误。
 - 集成测试：临时 `HOME` 下的 `.config/web-tools/.env` 被加载。
 - 集成测试：`WEB_TOOLS_ENV` 指向临时文件时被加载。
+- 集成测试：临时 `WEB_TOOLS_CONFIG` + 临时 env file 同时存在时，配置字段和 secret 可见性都符合上面的两条链路。
 
 #### Task 20: setup 支持 env file 写入
 
