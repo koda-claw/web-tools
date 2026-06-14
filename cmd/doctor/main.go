@@ -86,7 +86,7 @@ and the optional SearXNG search backend. Missing optional dependencies are repor
 as warnings instead of hard failures.`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			report := defaultChecker().Run()
+			report := DefaultChecker().Run()
 			if flagJSON {
 				fmt.Println(report.RenderJSON())
 			} else {
@@ -102,7 +102,7 @@ as warnings instead of hard failures.`,
 	return cmd
 }
 
-func defaultChecker() checker {
+func DefaultChecker() checker {
 	return checker{
 		lookPath: func(name string) (string, error) {
 			path := config.FindExecutable(name)

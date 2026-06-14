@@ -39,7 +39,7 @@ If the CLI binary is installed but this skill is missing or stale, install it
 from the CLI:
 
 ```bash
-web-tools skill install --force
+web-tools setup
 ```
 
 For agents that only have the repository URL, either run `web-tools skill
@@ -379,7 +379,7 @@ configured explicitly and should read secrets only from environment variables.
 Prefer the CLI config command instead of hand-writing JSON:
 
 ```bash
-web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 ```
 
 ```bash

@@ -20,7 +20,7 @@
 如果另一个 Agent 只有这个仓库地址，按这个顺序执行：
 
 1. 安装 `web-tools` CLI binary，或从源码构建。
-2. 用 `web-tools skill install` 安装 Agent skill，或从源码 checkout 复制 `skills/web-tools`。
+2. 运行 `web-tools setup` 安装 Agent skill，并检查本地可用性。
 3. 运行 `web-tools doctor --json`，只修复 hard error；缺少可选依赖通常只是 warning。
 4. 用 `web-tools web-search "<query>" --json` 获取候选来源。
 5. 用 `web-tools web-reader "<url>" --json` 读取选中的页面。
@@ -78,7 +78,7 @@ web-tools doctor --json
 如果你只下载了 CLI binary，也可以直接用 CLI 初始化 Agent skill：
 
 ```bash
-web-tools skill install
+web-tools setup
 ```
 
 ## 快速使用
@@ -134,7 +134,7 @@ web-tools doctor
 web-tools doctor --json
 
 # 从 CLI 安装或更新 Agent skill
-web-tools skill install --force
+web-tools setup
 ```
 
 ## 测试
@@ -196,7 +196,7 @@ reader auto: builtin-reader
 BigModel/Zhipu MCP provider 可以通过 CLI 配置，不需要手写 JSON：
 
 ```bash
-web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 export ZHIPU_APIKEY=...
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
@@ -206,13 +206,20 @@ web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bi
 如果希望 `--provider auto` 的搜索 fallback 也尝试 BigModel：
 
 ```bash
-web-tools config provider add bigmodel \
-  --preset bigmodel \
+web-tools setup \
+  --provider bigmodel \
   --auth-env ZHIPU_APIKEY \
   --enable-search-auto
 ```
 
-该命令默认写入 `~/.config/web-tools/config.json`，只保存环境变量名，不保存 token 值。等价 JSON：
+`web-tools setup` 会安装或更新 Agent skill，在需要时写 provider 配置，并运行 `doctor`。
+如果只想改配置，也可以使用更聚焦的配置命令：
+
+```bash
+web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+```
+
+这两个命令默认写入 `~/.config/web-tools/config.json`，只保存环境变量名，不保存 token 值。等价 JSON：
 
 ```json
 {

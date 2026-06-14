@@ -28,6 +28,9 @@ go run . config --help >/dev/null
 echo "[smoke] skill help"
 go run . skill --help >/dev/null
 
+echo "[smoke] setup help"
+go run . setup --help >/dev/null
+
 echo "[smoke] version"
 go run . --version >/dev/null
 
@@ -71,5 +74,18 @@ go run . skill install \
   --json >"$tmp_dir/skill-install.json"
 grep -q '"ok": true' "$tmp_dir/skill-install.json"
 test -f "$tmp_dir/skills/web-tools/SKILL.md"
+
+echo "[smoke] setup command"
+go run . setup \
+  --provider bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-search-auto \
+  --config "$tmp_dir/setup-config.json" \
+  --skill-dir "$tmp_dir/setup-skills" \
+  --skill-source ./skills/web-tools/SKILL.md \
+  --skip-doctor >"$tmp_dir/setup.out"
+grep -q 'Configured provider "bigmodel"' "$tmp_dir/setup.out"
+test -f "$tmp_dir/setup-skills/web-tools/SKILL.md"
+grep -q '"bigmodel"' "$tmp_dir/setup-config.json"
 
 echo "[smoke] ok"

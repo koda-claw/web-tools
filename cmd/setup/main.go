@@ -1,0 +1,126 @@
+package setupcmd
+
+import (
+	"fmt"
+	"os"
+
+	configcmd "github.com/koda-claw/web-tools/cmd/config"
+	"github.com/koda-claw/web-tools/cmd/doctor"
+	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
+	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/spf13/cobra"
+)
+
+// Cmd returns the setup command.
+func Cmd(version string) *cobra.Command {
+	var (
+		flagProvider         string
+		flagAuthEnv          string
+		flagConfig           string
+		flagInstallSkill     bool
+		flagSkillDir         string
+		flagSkillSource      string
+		flagForceSkill       bool
+		flagEnableSearchAuto bool
+		flagEnableReaderAuto bool
+		flagSkipDoctor       bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "setup",
+		Short: "Run guided Agent setup",
+		Long: `Run a practical setup sequence for agents: optionally install the skill,
+optionally configure a provider preset, and run doctor so the caller can see
+what still needs attention.`,
+		Example: `  web-tools setup
+  web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
+  web-tools setup --provider bigmodel --enable-search-auto --install-skill`,
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			opts := Options{
+				Version:          version,
+				Provider:         flagProvider,
+				AuthEnv:          flagAuthEnv,
+				ConfigPath:       flagConfig,
+				InstallSkill:     flagInstallSkill,
+				SkillDir:         flagSkillDir,
+				SkillSource:      flagSkillSource,
+				ForceSkill:       flagForceSkill,
+				EnableSearchAuto: flagEnableSearchAuto,
+				EnableReaderAuto: flagEnableReaderAuto,
+				SkipDoctor:       flagSkipDoctor,
+			}
+			if err := Run(opts); err != nil {
+				apperrors.HandleError(err)
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&flagProvider, "provider", "", "Optional provider preset to configure: bigmodel")
+	cmd.Flags().StringVar(&flagAuthEnv, "auth-env", "ZHIPU_APIKEY", "Environment variable name that stores the provider token")
+	cmd.Flags().StringVar(&flagConfig, "config", "", "Config file path (default: ~/.config/web-tools/config.json)")
+	cmd.Flags().BoolVar(&flagInstallSkill, "install-skill", true, "Install or update the Agent skill")
+	cmd.Flags().StringVar(&flagSkillDir, "skill-dir", "~/.codex/skills", "Skill root directory")
+	cmd.Flags().StringVar(&flagSkillSource, "skill-source", "", "Local SKILL.md path or HTTP(S) URL")
+	cmd.Flags().BoolVar(&flagForceSkill, "force-skill", true, "Overwrite existing web-tools skill during setup")
+	cmd.Flags().BoolVar(&flagEnableSearchAuto, "enable-search-auto", false, "Add provider to search.default_provider_chain")
+	cmd.Flags().BoolVar(&flagEnableReaderAuto, "enable-reader-auto", false, "Add provider to reader.default_provider_chain")
+	cmd.Flags().BoolVar(&flagSkipDoctor, "skip-doctor", false, "Skip final doctor check")
+	return cmd
+}
+
+// Options configures setup execution.
+type Options struct {
+	Version          string
+	Provider         string
+	AuthEnv          string
+	ConfigPath       string
+	InstallSkill     bool
+	SkillDir         string
+	SkillSource      string
+	ForceSkill       bool
+	EnableSearchAuto bool
+	EnableReaderAuto bool
+	SkipDoctor       bool
+}
+
+// Run executes setup.
+func Run(opts Options) error {
+	fmt.Fprintln(os.Stdout, "web-tools setup")
+
+	if opts.InstallSkill {
+		fmt.Fprintln(os.Stdout, "\n[1/3] Installing Agent skill")
+		if err := skillcmd.InstallSkill(opts.Version, opts.SkillDir, opts.SkillSource, opts.ForceSkill, false); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(os.Stdout, "\n[1/3] Skipping Agent skill install")
+	}
+
+	if opts.Provider != "" {
+		fmt.Fprintf(os.Stdout, "\n[2/3] Configuring provider %q\n", opts.Provider)
+		if err := configcmd.AddProvider(opts.ConfigPath, opts.Provider, opts.Provider, opts.AuthEnv, opts.EnableSearchAuto, opts.EnableReaderAuto, false); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(os.Stdout, "\n[2/3] No provider requested")
+		fmt.Fprintln(os.Stdout, "To add BigModel later: web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY")
+	}
+
+	if opts.SkipDoctor {
+		fmt.Fprintln(os.Stdout, "\n[3/3] Skipping doctor")
+		return nil
+	}
+
+	fmt.Fprintln(os.Stdout, "\n[3/3] Running doctor")
+	report := doctor.DefaultChecker().Run()
+	fmt.Print(report.RenderText())
+	if !report.OK {
+		return apperrors.NewInputError(
+			"setup completed with doctor errors",
+			"doctor reported one or more hard errors",
+			[]string{"run web-tools doctor --json for details"},
+		)
+	}
+	return nil
+}

@@ -43,7 +43,7 @@ func installCmd(version string) *cobra.Command {
   web-tools skill install --source ./skills/web-tools/SKILL.md`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := installSkill(version, flagDir, flagSource, flagForce, flagJSON); err != nil {
+			if err := InstallSkill(version, flagDir, flagSource, flagForce, flagJSON); err != nil {
 				apperrors.HandleError(err)
 			}
 		},
@@ -56,7 +56,7 @@ func installCmd(version string) *cobra.Command {
 	return cmd
 }
 
-func installSkill(version string, dir string, source string, force bool, jsonOut bool) error {
+func InstallSkill(version string, dir string, source string, force bool, jsonOut bool) error {
 	if dir == "" {
 		dir = "~/.codex/skills"
 	}

@@ -8,6 +8,7 @@ Patch release for Agent setup ergonomics and documentation.
 
 ### Added
 
+- `web-tools setup` for one-command Agent setup, optional provider configuration, skill install, and doctor checks.
 - `web-tools config provider add/list` for CLI-managed provider configuration.
 - `web-tools skill install` so a downloaded CLI binary can initialize or update the Agent skill.
 - Chinese README at `README.zh-CN.md`.

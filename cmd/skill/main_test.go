@@ -14,7 +14,7 @@ func TestInstallSkillFromLocalSource(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "SKILL.md")
 	require.NoError(t, os.WriteFile(source, []byte("---\nname: web-tools\ndescription: test\n---\n"), 0644))
 
-	require.NoError(t, installSkill("dev", dir, source, false, false))
+	require.NoError(t, InstallSkill("dev", dir, source, false, false))
 
 	data, err := os.ReadFile(filepath.Join(dir, "web-tools", "SKILL.md"))
 	require.NoError(t, err)
@@ -25,11 +25,11 @@ func TestInstallSkillRefusesOverwriteWithoutForce(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(t.TempDir(), "SKILL.md")
 	require.NoError(t, os.WriteFile(source, []byte("---\nname: web-tools\ndescription: test\n---\n"), 0644))
-	require.NoError(t, installSkill("dev", dir, source, false, false))
+	require.NoError(t, InstallSkill("dev", dir, source, false, false))
 
-	err := installSkill("dev", dir, source, false, false)
+	err := InstallSkill("dev", dir, source, false, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "skill already installed")
 
-	require.NoError(t, installSkill("dev", dir, source, true, false))
+	require.NoError(t, InstallSkill("dev", dir, source, true, false))
 }

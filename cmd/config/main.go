@@ -64,7 +64,7 @@ func providerAddCmd() *cobra.Command {
 			if flagPreset == "" {
 				flagPreset = id
 			}
-			if err := addProvider(flagConfig, id, flagPreset, flagAuthEnv, flagEnableSearchAuto, flagEnableReaderAuto, flagJSON); err != nil {
+			if err := AddProvider(flagConfig, id, flagPreset, flagAuthEnv, flagEnableSearchAuto, flagEnableReaderAuto, flagJSON); err != nil {
 				apperrors.HandleError(err)
 			}
 		},
@@ -79,7 +79,7 @@ func providerAddCmd() *cobra.Command {
 	return cmd
 }
 
-func addProvider(path string, id string, preset string, authEnv string, enableSearchAuto bool, enableReaderAuto bool, jsonOut bool) error {
+func AddProvider(path string, id string, preset string, authEnv string, enableSearchAuto bool, enableReaderAuto bool, jsonOut bool) error {
 	if path == "" {
 		path = config.UserConfigPath()
 	} else {

@@ -20,7 +20,7 @@ Zero cost by default. No API keys required for the local-first path.
 If another agent only has this repository URL, have it follow this order:
 
 1. Install the `web-tools` CLI binary or build it from source.
-2. Install the Agent skill with `web-tools skill install`, or copy `skills/web-tools` from a source checkout.
+2. Run `web-tools setup` to install the Agent skill and inspect local readiness.
 3. Run `web-tools doctor --json` and fix only hard errors. Missing optional dependencies are warnings.
 4. Use `web-tools web-search "<query>" --json` to find candidate sources.
 5. Use `web-tools web-reader "<url>" --json` to read selected pages.
@@ -80,7 +80,7 @@ web-tools doctor --json
 If you installed only the CLI binary, initialize the Agent skill from the CLI:
 
 ```bash
-web-tools skill install
+web-tools setup
 ```
 
 ## Quick start
@@ -132,7 +132,7 @@ web-tools doctor
 web-tools doctor --json
 
 # Install/update the Agent skill from the CLI
-web-tools skill install --force
+web-tools setup
 ```
 
 ## Test
@@ -197,7 +197,7 @@ reader auto: builtin-reader
 Optional MCP providers can be enabled through config. For BigModel/Zhipu:
 
 ```bash
-web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 export ZHIPU_APIKEY=...
 web-tools doctor --json
 web-tools web-search "Go readability library" --provider bigmodel --json
@@ -207,13 +207,21 @@ web-tools web-reader "https://github.com/go-shiori/go-readability" --provider bi
 To include BigModel in `--provider auto` search fallback:
 
 ```bash
-web-tools config provider add bigmodel \
-  --preset bigmodel \
+web-tools setup \
+  --provider bigmodel \
   --auth-env ZHIPU_APIKEY \
   --enable-search-auto
 ```
 
-The command writes `~/.config/web-tools/config.json` by default and stores only
+`web-tools setup` installs or updates the Agent skill, writes provider config
+when requested, and runs `doctor`. The config command is also available for
+focused changes:
+
+```bash
+web-tools config provider add bigmodel --preset bigmodel --auth-env ZHIPU_APIKEY
+```
+
+Both commands write `~/.config/web-tools/config.json` by default and store only
 the environment variable name, not the token value. Equivalent JSON:
 
 ```json

@@ -13,7 +13,7 @@ import (
 func TestAddProviderBigModelWritesConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 
-	require.NoError(t, addProvider(path, "bigmodel", "bigmodel", "ZHIPU_APIKEY", true, false, false))
+	require.NoError(t, AddProvider(path, "bigmodel", "bigmodel", "ZHIPU_APIKEY", true, false, false))
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestAddProviderBigModelWritesConfig(t *testing.T) {
 }
 
 func TestAddProviderRejectsUnknownPreset(t *testing.T) {
-	err := addProvider(filepath.Join(t.TempDir(), "config.json"), "example", "unknown", "TOKEN", false, false, false)
+	err := AddProvider(filepath.Join(t.TempDir(), "config.json"), "example", "unknown", "TOKEN", false, false, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown provider preset")
 }

@@ -256,7 +256,26 @@ func TestCLIIntegrationConfigProviderAndSkillInstall(t *testing.T) {
 	skillData, err := os.ReadFile(filepath.Join(skillRoot, "web-tools", "SKILL.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(skillData), "name: web-tools")
-	assert.Contains(t, string(skillData), "web-tools config provider add bigmodel")
+	assert.Contains(t, string(skillData), "web-tools setup --provider bigmodel")
+
+	setupConfigPath := filepath.Join(dir, "setup-config.json")
+	setupSkillRoot := filepath.Join(dir, "setup-skills")
+	setupStdout, setupStderr := runCLI(t, bin, []string{
+		"setup",
+		"--provider", "bigmodel",
+		"--auth-env", "ZHIPU_APIKEY",
+		"--enable-search-auto",
+		"--config", setupConfigPath,
+		"--skill-dir", setupSkillRoot,
+		"--skill-source", "skills/web-tools/SKILL.md",
+		"--skip-doctor",
+	}, nil)
+	assert.Empty(t, setupStderr)
+	assert.Contains(t, setupStdout, "Configured provider")
+	require.FileExists(t, filepath.Join(setupSkillRoot, "web-tools", "SKILL.md"))
+	setupConfigData, err := os.ReadFile(setupConfigPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(setupConfigData), `"bigmodel"`)
 }
 
 func buildCLITestBinary(t *testing.T) string {
