@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.4.1 - 2026-06-15
+
+Patch release for Agent setup ergonomics and documentation.
+
 ### Added
 
 - `web-tools config provider add/list` for CLI-managed provider configuration.
