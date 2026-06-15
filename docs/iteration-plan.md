@@ -827,3 +827,22 @@ Phase 5 的安全边界：
 - 默认加载 `~/.config/web-tools/.env`，不默认加载当前目录 `.env`。
 - 当前进程环境变量优先级最高。
 - Skill 默认指导 Agent 使用非交互命令，不默认使用 `--interactive`。
+
+## Phase 6: Local GUI 可用性迭代
+
+Phase 6 把 CLI/skill/provider/env/doctor 的闭环进一步可视化，提供本地 GUI 管理入口。详细计划见 `docs/gui-iteration-plan.md`。
+
+推荐版本顺序：
+
+| Version | Scope | 目标 |
+|---------|-------|------|
+| v1.4.3 | setup check / repair API 先行 | 先把 GUI 需要的状态诊断抽成 CLI 和 GUI 共用能力。 |
+| v1.5.0 | `web-tools gui` MVP | 提供本地 Dashboard、provider/env 管理、基础 search/reader 测试。 |
+| v1.5.1 | GUI 可用性增强 | 诊断导出、Agent Guide 深化、reader auto 推荐策略。 |
+
+Phase 6 的安全边界：
+
+- GUI 默认只监听 `127.0.0.1`。
+- GUI 不展示、不记录、不返回 secret 明文。
+- GUI 不替代 CLI；所有配置写入仍走既有 config/env/setup 逻辑。
+- Reader/Search 远程 provider auto 开关必须显式确认，不能静默打开。
