@@ -1,18 +1,24 @@
+const $ = (id) => document.getElementById(id);
+const UI_STATE_KEY = "web-tools-gui-state-v1";
+const THEME_KEY = "web-tools-theme";
+
 const state = {
   status: null,
   guide: null,
   lang: detectLanguage(),
+  theme: detectTheme(),
   searchResult: null,
   readerResult: null,
 };
-
-const $ = (id) => document.getElementById(id);
-const UI_STATE_KEY = "web-tools-gui-state-v1";
 
 const messages = {
   en: {
     appTitle: "Local Console",
     languageLabel: "Language",
+    themeLabel: "Theme",
+    themeSystem: "System",
+    themeLight: "Light",
+    themeDark: "Dark",
     setupStatus: "Setup Status",
     refresh: "Refresh",
     provider: "Provider",
@@ -73,6 +79,10 @@ const messages = {
   zh: {
     appTitle: "本地控制台",
     languageLabel: "语言",
+    themeLabel: "主题",
+    themeSystem: "跟随系统",
+    themeLight: "浅色",
+    themeDark: "深色",
     setupStatus: "设置状态",
     refresh: "刷新",
     provider: "Provider",
@@ -141,6 +151,22 @@ function detectLanguage() {
   if (saved === "zh" || saved === "en") return saved;
   const langs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || "en"];
   return langs.some((lang) => String(lang).toLowerCase().startsWith("zh")) ? "zh" : "en";
+}
+
+function detectTheme() {
+  const saved = localStorage.getItem(THEME_KEY);
+  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+}
+
+function resolvedTheme() {
+  if (state.theme === "light" || state.theme === "dark") return state.theme;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = resolvedTheme();
+  const selector = $("theme-select");
+  if (selector) selector.value = state.theme;
 }
 
 function applyLanguage() {
@@ -373,6 +399,7 @@ function renderReaderResult(data) {
     const size = container.querySelector(".content-size.active")?.dataset.contentSize || "preview";
     const visibleContent = size === "full" ? content : textPreview;
     preview.className = `reader-preview ${mode === "markdown" ? "markdown-view" : ""}`;
+    preview.dataset.contentSize = size;
     if (mode === "markdown") {
       preview.innerHTML = renderMarkdown(visibleContent);
     } else {
@@ -593,6 +620,23 @@ $("language-select").addEventListener("change", (event) => {
   if (state.status) renderStatus(state.status);
   if (state.guide) renderGuide(state.guide);
 });
+$("theme-select").addEventListener("change", (event) => {
+  const value = event.target.value;
+  state.theme = value === "light" || value === "dark" ? value : "system";
+  localStorage.setItem(THEME_KEY, state.theme);
+  applyTheme();
+});
+if (window.matchMedia) {
+  const colorSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const onColorSchemeChange = () => {
+    if (state.theme === "system") applyTheme();
+  };
+  if (colorSchemeQuery.addEventListener) {
+    colorSchemeQuery.addEventListener("change", onColorSchemeChange);
+  } else if (colorSchemeQuery.addListener) {
+    colorSchemeQuery.addListener(onColorSchemeChange);
+  }
+}
 $("provider-form").addEventListener("submit", (event) => {
   event.preventDefault();
   submitForm(event.currentTarget, "/api/setup/provider");
@@ -639,6 +683,7 @@ $("download-diagnostics").addEventListener("click", async () => {
   URL.revokeObjectURL(url);
 });
 
+applyTheme();
 applyLanguage();
 loadUIState();
 renderPersistedResults();
