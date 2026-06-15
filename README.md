@@ -145,15 +145,29 @@ web-tools gui --no-open
 ## Test
 
 ```bash
-go vet ./...
+make check
+```
+
+Equivalent direct commands:
+
+```bash
 go test ./...
+go vet ./...
 ./scripts/smoke.sh
 ```
 
-`go test ./...` includes offline CLI integration tests. They build a temporary
+`make test` includes offline CLI integration tests. They build a temporary
 `web-tools` binary, run it against local HTTP fixtures, and verify the
 search-then-read Agent workflow without calling live search engines or a real
 browser.
+
+Useful local targets:
+
+```bash
+make gui
+make setup-check
+make install-local
+```
 
 ## Doctor
 

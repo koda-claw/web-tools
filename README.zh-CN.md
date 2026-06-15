@@ -147,12 +147,26 @@ web-tools gui --no-open
 ## 测试
 
 ```bash
-go vet ./...
+make check
+```
+
+等价的直接命令：
+
+```bash
 go test ./...
+go vet ./...
 ./scripts/smoke.sh
 ```
 
-`go test ./...` 包含离线 CLI 集成测试。测试会构建临时 `web-tools` binary，并用本地 HTTP fixture 验证 Agent 的 search-then-read 工作流，不依赖真实搜索引擎或真实浏览器。
+`make test` 包含离线 CLI 集成测试。测试会构建临时 `web-tools` binary，并用本地 HTTP fixture 验证 Agent 的 search-then-read 工作流，不依赖真实搜索引擎或真实浏览器。
+
+常用本地目标：
+
+```bash
+make gui
+make setup-check
+make install-local
+```
 
 ## Doctor
 
