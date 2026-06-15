@@ -255,9 +255,9 @@ WEB_TOOLS_ENV=~/.config/web-tools/.env web-tools web-search "Go readability libr
 - `cmd/setup`：写 env file、拒绝覆盖、`--force-env` 覆盖、stdout 不泄漏 secret。
 - `cmd/doctor`：env file 诊断不泄漏 value。
 
-### v1.4.3: Setup Check / Repair 建议
+### 后续并入 v1.5.0: Setup Check / Repair 建议
 
-目标：让用户和 Agent 更容易知道“缺什么、下一步做什么”。
+目标：让用户和 Agent 更容易知道“缺什么、下一步做什么”。这部分不再单独发布，而是并入 `v1.5.0 Local GUI 管理台` 的 Milestone 1。
 
 #### Task 22: setup --check
 
@@ -295,9 +295,9 @@ Run: web-tools setup --provider bigmodel --set-env ZHIPU_APIKEY=<redacted>
 
 后续如果要自动修复，再加 `--apply`。
 
-### v1.5.0: 人类交互式 Setup
+### 后续并入 v1.5.0: 人类交互式 Setup
 
-目标：为人类本地首次配置提供安全交互式体验。
+目标：为人类本地首次配置提供安全交互式体验。是否实现为 CLI `--interactive`，还是先由 GUI 承担，需要在 `v1.5.0` 开发时根据 GUI 完成度决定。
 
 #### Task 24: setup --interactive
 
@@ -344,7 +344,7 @@ web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 
 ## 文档同步要求
 
-每个版本都要同步：
+本轮统一发布前要同步：
 
 - `README.md`
 - `README.zh-CN.md`
@@ -366,8 +366,8 @@ Skill 文档保持英文；方案和计划文档保持中文。
 
 ## 推荐执行顺序
 
-1. v1.4.2：Task 19-21，先解决 env file 自动加载和非交互写入。
-2. v1.4.3：Task 22-23，补 check/repair 建议。
-3. v1.5.0：Task 24，做人类交互式 setup。
+1. `v1.4.2` 已完成：Task 19-21，解决 env file 自动加载和非交互写入。
+2. 后续统一进入 `v1.5.0 Local GUI 管理台`：Task 22-24 与 GUI 计划中的 Milestone 1-3 一起推进。
+3. 全部验收通过后统一发布 `v1.5.0`，不再为 Task 22-24 单独打 tag。
 
-这个顺序优先解决当前真实痛点，同时避免过早把交互式流程做复杂。
+这个顺序保留先补 check/repair 能力的实现依赖，同时避免拆出多个小版本。

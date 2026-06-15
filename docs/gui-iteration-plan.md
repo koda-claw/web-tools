@@ -77,9 +77,11 @@ MVP 先使用 Go `embed` 内嵌静态 HTML/CSS/JS，避免引入 Node 构建链�
 - Test：搜索测试、网页读取测试。
 - Agent Guide：安装命令、skill 安装命令、推荐检查命令、当前状态摘要。
 
-## 版本路线
+## v1.5.0 统一范围
 
-### v1.4.3: Setup Check / Repair API 先行
+本轮不再拆多个 tag。`setup --check`、repair suggestions、GUI MVP、诊断导出和 Agent Guide 都归入 `v1.5.0`，按内部里程碑顺序推进，全部验收通过后统一发布。
+
+### Milestone 1: Setup Check / Repair API
 
 目标：先把 GUI 需要的状态诊断抽成可复用能力，CLI 和 GUI 共用。
 
@@ -152,7 +154,7 @@ web-tools skill install --force
 - 单元测试：BigModel 未配置时建议 provider setup。
 - 单元测试：reader auto 未启用但 BigModel 可用时建议 `--enable-reader-auto`。
 
-### v1.5.0: GUI MVP
+### Milestone 2: GUI MVP
 
 目标：提供本地 GUI，可查看状态、配置 BigModel、写 env file、执行基础测试。
 
@@ -332,7 +334,7 @@ POST /api/test/reader
 - Playwright：切换 reader auto 后 provider chain 更新。
 - 视觉检查：desktop/mobile 截图无明显重叠。
 
-### v1.5.1: GUI 可用性增强
+### Milestone 3: GUI 可用性增强
 
 目标：让 GUI 更适合日常排障和 Agent handoff。
 
@@ -378,15 +380,7 @@ POST /api/test/reader
 
 ## 发布门槛
 
-### v1.4.3
-
-- `go test ./...`
-- `go vet ./...`
-- `./scripts/smoke.sh`
-- `git diff --check`
-- 临时 HOME 验收：`setup --check --json` 可解析且不泄漏 secret。
-
-### v1.5.0
+`v1.5.0` 统一发布前必须完成全部 Milestone，并通过以下验收：
 
 - `go test ./...`
 - `go vet ./...`
@@ -421,7 +415,7 @@ curl /api/env
 
 ## 建议执行顺序
 
-1. v1.4.3：先做 `setup --check --json` 和 repair suggestions。
-2. v1.5.0：做 `web-tools gui` server、status API、provider/env API、基础页面。
-3. v1.5.0 验收通过后再考虑默认安装方式和 release notes。
-4. v1.5.1：补诊断导出、Agent Guide 深化、reader auto 推荐策略。
+1. Milestone 1：先做 `setup --check --json` 和 repair suggestions。
+2. Milestone 2：做 `web-tools gui` server、status API、provider/env API、基础页面。
+3. Milestone 3：补诊断导出、Agent Guide 深化、reader auto 推荐策略。
+4. 全部验收通过后统一准备 `v1.5.0` release notes、tag 和 release binary 冷启动验收。

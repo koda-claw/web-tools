@@ -813,13 +813,13 @@ Phase 4 从“能用”转向“好用”，优先补齐 Agent 安装、配置�
 
 Phase 5 继续把 setup 从“命令式可用”推进到“用户和 Agent 都好用”。详细计划见 `docs/setup-env-iteration-plan.md`。
 
-推荐版本顺序：
+Phase 5 已完成的发布：
 
 | Version | Scope | 目标 |
 |---------|-------|------|
 | v1.4.2 | Env file 自动加载 + setup 写 env file | 支持 `~/.config/web-tools/.env`，让用户配置一次后 CLI 直接可用。 |
-| v1.4.3 | setup check / repair 建议 | 让用户和 Agent 能看到当前缺什么、下一步命令是什么。 |
-| v1.5.0 | setup --interactive | 给人类首次本地配置提供交互式引导；Agent 仍默认走非交互命令。 |
+
+后续 `setup check / repair 建议` 不再单独发布，而是并入 Phase 6 的 `v1.5.0 Local GUI 管理台` 主线。
 
 Phase 5 的安全边界：
 
@@ -832,13 +832,13 @@ Phase 5 的安全边界：
 
 Phase 6 把 CLI/skill/provider/env/doctor 的闭环进一步可视化，提供本地 GUI 管理入口。详细计划见 `docs/gui-iteration-plan.md`。
 
-推荐版本顺序：
+推荐发布口径：
 
 | Version | Scope | 目标 |
 |---------|-------|------|
-| v1.4.3 | setup check / repair API 先行 | 先把 GUI 需要的状态诊断抽成 CLI 和 GUI 共用能力。 |
-| v1.5.0 | `web-tools gui` MVP | 提供本地 Dashboard、provider/env 管理、基础 search/reader 测试。 |
-| v1.5.1 | GUI 可用性增强 | 诊断导出、Agent Guide 深化、reader auto 推荐策略。 |
+| v1.5.0 | Local GUI 管理台 | 一次性完成 setup check / repair API、GUI MVP、诊断导出、Agent Guide 和 reader auto 推荐策略。 |
+
+内部里程碑不单独打 tag，全部验收通过后统一发布 `v1.5.0`。
 
 Phase 6 的安全边界：
 
