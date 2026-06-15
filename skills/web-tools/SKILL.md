@@ -79,7 +79,20 @@ web-tools setup --check --json
 
 The token is stored in `~/.config/web-tools/.env` with `0600` permissions when
 `--set-env` is used. `config.json` stores only `auth_env`, never the token
-value. Existing shell environment variables take precedence over the env file.
+value. The CLI automatically loads `~/.config/web-tools/.env`. It does not
+automatically load a project-local `./.env`.
+
+If a user keeps secrets in another env file, run commands with `WEB_TOOLS_ENV`
+pointing at that file:
+
+```bash
+WEB_TOOLS_ENV=/path/to/web-tools.env web-tools setup --check --json
+WEB_TOOLS_ENV=/path/to/web-tools.env web-tools web-search "Go readability library" --provider bigmodel --json
+```
+
+Existing shell environment variables take precedence over env file values.
+`WEB_TOOLS_ENV` can override values from `~/.config/web-tools/.env`, but not
+values already exported in the shell before `web-tools` starts.
 
 Enable provider auto chains only when the user has accepted any remote provider
 privacy and cost implications:
@@ -404,8 +417,15 @@ Environment variables override config file:
 - `WEB_READER_TIMEOUT` — Default HTTP timeout
 - `WEB_READER_NO_BROWSER` — Disable browser fallback
 - `MARKITDOWN_PATH` — Path to markitdown binary
+- `WEB_TOOLS_ENV` — Optional env file path to load in addition to `~/.config/web-tools/.env`
 
 These overrides are applied by both `web-tools web-search` and `web-tools web-reader` at runtime.
+
+Env file loading rules:
+- Default env file: `~/.config/web-tools/.env`
+- Explicit env file: set `WEB_TOOLS_ENV=/path/to/file.env`
+- Project-local `./.env` is not loaded automatically
+- Shell env values win over both env files
 
 ### Optional MCP provider config
 
@@ -429,6 +449,10 @@ This stores the token in `~/.config/web-tools/.env` with `0600` permissions.
 The CLI loads that file automatically. Existing shell environment variables win
 over env file values, so temporary `export ZHIPU_APIKEY=...` still works for
 one-off runs.
+
+For non-default env file locations, set `WEB_TOOLS_ENV` on the command. This is
+useful for handoffs where the user provides a repo-specific or agent-specific
+secret file without moving it into `~/.config/web-tools/.env`.
 
 Then verify:
 
