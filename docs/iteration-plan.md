@@ -826,7 +826,7 @@ Phase 5 的安全边界：
 - `config.json` 只保存 `auth_env`，不保存真实 API key。
 - 默认加载 `~/.config/web-tools/.env`，不默认加载当前目录 `.env`。
 - 当前进程环境变量优先级最高。
-- Skill 默认指导 Agent 使用非交互命令，不默认使用 `--interactive`。
+- CLI 保持非交互；人类交互式配置由后续 GUI 承担。
 
 ## Phase 6: Local GUI 可用性迭代
 

@@ -74,12 +74,13 @@ MVP 先使用 Go `embed` 内嵌静态 HTML/CSS/JS，避免引入 Node 构建链�
 - Dashboard：版本、doctor、skill、provider、env file 状态。
 - Providers：BigModel 配置、auth 状态、search/reader auto 开关。
 - Env：写入或更新 `ZHIPU_APIKEY`，默认 mask，不回显明文。
+- Interactive Setup：用表单完成 skill、provider、env file 和 reader fallback 配置。
 - Test：搜索测试、网页读取测试。
 - Agent Guide：安装命令、skill 安装命令、推荐检查命令、当前状态摘要。
 
 ## v1.5.0 统一范围
 
-本轮不再拆多个 tag。`setup --check`、repair suggestions、GUI MVP、诊断导出和 Agent Guide 都归入 `v1.5.0`，按内部里程碑顺序推进，全部验收通过后统一发布。
+本轮不再拆多个 tag。`setup --check`、repair suggestions、GUI MVP、诊断导出和 Agent Guide 都归入 `v1.5.0`，按内部里程碑顺序推进，全部验收通过后统一发布。人类交互式配置由 GUI 承担，CLI `setup --interactive` 暂不进入本轮。
 
 ### Milestone 1: Setup Check / Repair API
 

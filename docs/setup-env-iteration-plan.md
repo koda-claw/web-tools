@@ -295,11 +295,11 @@ Run: web-tools setup --provider bigmodel --set-env ZHIPU_APIKEY=<redacted>
 
 后续如果要自动修复，再加 `--apply`。
 
-### 后续并入 v1.5.0: 人类交互式 Setup
+### 后续并入 v1.5.0: 人类交互式配置
 
-目标：为人类本地首次配置提供安全交互式体验。是否实现为 CLI `--interactive`，还是先由 GUI 承担，需要在 `v1.5.0` 开发时根据 GUI 完成度决定。
+目标：为人类本地首次配置提供安全交互式体验。`v1.5.0` 明确由 GUI 承担这部分能力，CLI `setup --interactive` 暂不进入本轮；CLI 保持非交互，继续服务 Agent 和脚本。
 
-#### Task 24: setup --interactive
+#### Task 24: GUI interactive setup
 
 **交互流程**
 
@@ -334,13 +334,13 @@ Run: web-tools setup --provider bigmodel --set-env ZHIPU_APIKEY=<redacted>
 
 **Agent 约束**
 
-Skill 不应默认使用 `--interactive`。Agent 默认走非交互命令：
+Skill 不应默认使用 GUI 或交互流程。Agent 默认走非交互命令：
 
 ```bash
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY
 ```
 
-只有用户明确说“帮我交互式配置”时才使用 `--interactive`。
+只有用户明确要求本地可视化配置时，才启动 `web-tools gui`。
 
 ## 文档同步要求
 
@@ -361,8 +361,8 @@ Skill 文档保持英文；方案和计划文档保持中文。
 | 自动加载当前目录 `.env` 可能误读项目 secret | 默认不加载当前目录 `.env`。 |
 | env file 格式支持过复杂会变成 shell 解析器 | 只支持简单 dotenv 格式。 |
 | key 写入日志或错误 | 所有输出只显示 env 名，不显示 value。 |
-| Agent 使用 interactive 卡住 | Skill 默认指导非交互命令。 |
-| reader 远程 provider 涉及隐私/成本 | reader auto chain 默认不启用，interactive 中额外确认。 |
+| Agent 使用交互流程卡住 | Skill 默认指导非交互命令。 |
+| reader 远程 provider 涉及隐私/成本 | reader auto chain 默认不启用，GUI 中额外确认。 |
 
 ## 推荐执行顺序
 
