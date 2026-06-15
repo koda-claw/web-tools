@@ -11,82 +11,91 @@
       <header class="topbar">
         <div>
           <p class="kicker">web-tools</p>
-          <h1>Local Console</h1>
+          <h1 data-i18n="appTitle">Local Console</h1>
         </div>
-        <div class="status-strip" id="summary"></div>
+        <div class="top-actions">
+          <label class="language-control">
+            <span data-i18n="languageLabel">Language</span>
+            <select id="language-select" aria-label="Language">
+              <option value="en">English</option>
+              <option value="zh">中文</option>
+            </select>
+          </label>
+          <div class="status-strip" id="summary"></div>
+        </div>
       </header>
 
       <section class="grid">
         <article class="panel span-2">
           <div class="panel-head">
-            <h2>Setup Status</h2>
-            <button class="icon-button" id="refresh" type="button" title="Refresh status">Refresh</button>
+            <h2 data-i18n="setupStatus">Setup Status</h2>
+            <button class="icon-button" id="refresh" type="button" title="Refresh status" data-i18n="refresh">Refresh</button>
           </div>
           <div class="status-grid" id="checks"></div>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Provider</h2>
-            <span class="pill" id="provider-pill">pending</span>
+            <h2 data-i18n="provider">Provider</h2>
+            <span class="pill" id="provider-pill" data-i18n="pending">pending</span>
           </div>
           <form id="provider-form" class="form-stack">
             <label>
-              Provider
+              <span data-i18n="provider">Provider</span>
               <select name="provider">
                 <option value="bigmodel">BigModel</option>
               </select>
             </label>
             <label>
-              Auth env
+              <span data-i18n="authEnv">Auth env</span>
               <input name="auth_env" value="ZHIPU_APIKEY" autocomplete="off" />
             </label>
             <label class="checkline">
               <input type="checkbox" name="enable_search_auto" />
-              <span>Search auto</span>
+              <span data-i18n="searchAuto">Search auto</span>
             </label>
             <label class="checkline">
               <input type="checkbox" name="enable_reader_auto" />
-              <span>Reader fallback</span>
+              <span data-i18n="readerFallback">Reader fallback</span>
             </label>
-            <button type="submit">Save Provider</button>
+            <button type="submit" data-i18n="saveProvider">Save Provider</button>
           </form>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Env File</h2>
-            <span class="pill" id="env-pill">pending</span>
+            <h2 data-i18n="envFile">Env File</h2>
+            <span class="pill" id="env-pill" data-i18n="pending">pending</span>
           </div>
           <form id="env-form" class="form-stack">
             <label>
-              Key
+              <span data-i18n="key">Key</span>
               <input name="key" value="ZHIPU_APIKEY" autocomplete="off" />
             </label>
             <label>
-              Value
+              <span data-i18n="value">Value</span>
               <input name="value" type="password" autocomplete="new-password" />
             </label>
             <label class="checkline">
               <input type="checkbox" name="force" />
-              <span>Overwrite</span>
+              <span data-i18n="overwrite">Overwrite</span>
             </label>
-            <button type="submit">Save Env</button>
+            <button type="submit" data-i18n="saveEnv">Save Env</button>
           </form>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Search Test</h2>
+            <h2 data-i18n="searchTest">Search Test</h2>
             <span class="pill">JSON</span>
           </div>
           <form id="search-form" class="form-stack">
             <label>
-              Query
+              <span data-i18n="query">Query</span>
               <input name="query" value="Go readability library" />
             </label>
             <label>
-              Provider
+              <span data-i18n="provider">Provider</span>
               <select name="provider">
                 <option value="auto">auto</option>
                 <option value="duckduckgo">duckduckgo</option>
@@ -94,42 +103,42 @@
                 <option value="bigmodel">bigmodel</option>
               </select>
             </label>
-            <button type="submit">Run Search</button>
+            <button type="submit" data-i18n="runSearch">Run Search</button>
           </form>
         </article>
 
         <article class="panel">
           <div class="panel-head">
-            <h2>Reader Test</h2>
+            <h2 data-i18n="readerTest">Reader Test</h2>
             <span class="pill">builtin</span>
           </div>
           <form id="reader-form" class="form-stack">
             <label>
-              URL
+              <span>URL</span>
               <input name="url" value="https://example.com" />
             </label>
             <label>
-              Provider
+              <span data-i18n="provider">Provider</span>
               <select name="provider">
                 <option value="builtin-reader">builtin-reader</option>
               </select>
             </label>
-            <button type="submit">Run Reader</button>
+            <button type="submit" data-i18n="runReader">Run Reader</button>
           </form>
         </article>
 
         <article class="panel span-2">
           <div class="panel-head">
-            <h2>Agent Guide</h2>
-            <button id="copy-guide" type="button">Copy</button>
+            <h2 data-i18n="agentGuide">Agent Guide</h2>
+            <button id="copy-guide" type="button" data-i18n="copy">Copy</button>
           </div>
           <pre id="agent-guide" class="codebox"></pre>
         </article>
 
         <article class="panel span-2">
           <div class="panel-head">
-            <h2>Diagnostics</h2>
-            <button id="download-diagnostics" type="button">Export JSON</button>
+            <h2 data-i18n="diagnostics">Diagnostics</h2>
+            <button id="download-diagnostics" type="button" data-i18n="exportJson">Export JSON</button>
           </div>
           <pre id="output" class="codebox"></pre>
         </article>

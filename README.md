@@ -170,6 +170,8 @@ web-tools gui --no-open --port 0
 
 The GUI binds to `127.0.0.1` by default. It can inspect setup readiness, configure the BigModel provider, write `~/.config/web-tools/.env`, run basic search/reader smoke tests, export non-sensitive diagnostics, and generate Agent handoff commands. It never displays or returns secret values; `config.json` stores only environment variable names such as `ZHIPU_APIKEY`.
 
+The GUI follows the browser language by default: Chinese browsers get Chinese UI, all other languages default to English. A language selector is available in the header.
+
 For agents and scripts, prefer the non-interactive CLI:
 
 ```bash

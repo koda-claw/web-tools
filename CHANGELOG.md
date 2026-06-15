@@ -5,6 +5,7 @@
 ### Added
 
 - `web-tools gui` local-only management console for setup status, provider/env management, smoke tests, diagnostics export, and Agent handoff commands.
+- GUI language detection with Chinese UI for `zh*` browser languages and English fallback for all other languages.
 - `web-tools setup --check --json` readiness report with non-sensitive repair suggestions for CLI and GUI consumers.
 - `web-tools setup` for one-command Agent setup, optional provider configuration, skill install, and doctor checks.
 - User env file auto-loading from `~/.config/web-tools/.env`, with `WEB_TOOLS_ENV` override support.

@@ -171,6 +171,8 @@ GUI 默认绑定 `127.0.0.1`。它可以检查 setup 状态、配置 BigModel pr
 
 GUI 不展示、不返回 secret 明文；`config.json` 只保存 `ZHIPU_APIKEY` 这样的环境变量名，不保存 token 值。
 
+GUI 默认跟随浏览器语言：中文浏览器显示中文，其他语言默认显示英文；页面右上角也可以手动切换语言。
+
 Agent 和脚本默认仍然应该使用非交互 CLI：
 
 ```bash
