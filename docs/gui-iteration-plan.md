@@ -82,6 +82,13 @@ MVP 先使用 Go `embed` 内嵌静态 HTML/CSS/JS，避免引入 Node 构建链�
 
 本轮不再拆多个 tag。`setup --check`、repair suggestions、GUI MVP、诊断导出和 Agent Guide 都归入 `v1.5.0`，按内部里程碑顺序推进，全部验收通过后统一发布。人类交互式配置由 GUI 承担，CLI `setup --interactive` 暂不进入本轮。
 
+当前实现状态：
+
+- Milestone 1 已实现：`setup --check`、`--json`、repair suggestions、setupcheck 单元测试和 smoke 覆盖。
+- Milestone 2 已实现：`web-tools gui`、本地 server、`/healthz`、status/provider/env/test API、静态 GUI 页面。
+- Milestone 3 已实现：诊断导出、Agent Guide、reader auto 显式确认提示和动态建议。
+- 发布前仍需执行统一验收：`go test ./...`、`go vet ./...`、`./scripts/smoke.sh`、`git diff --check`，并完成本地 GUI 冒烟。
+
 ### Milestone 1: Setup Check / Repair API
 
 目标：先把 GUI 需要的状态诊断抽成可复用能力，CLI 和 GUI 共用。

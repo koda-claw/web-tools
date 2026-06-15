@@ -87,6 +87,36 @@ func TestRunSetupEnvFileOverwriteRequiresForce(t *testing.T) {
 	assert.Equal(t, "new", values["ZHIPU_APIKEY"])
 }
 
+func TestCmdSetupCheckJSON(t *testing.T) {
+	dir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	origConfig := os.Getenv("WEB_TOOLS_CONFIG")
+	origAuth := os.Getenv("ZHIPU_APIKEY")
+	t.Setenv("HOME", dir)
+	t.Setenv("WEB_TOOLS_CONFIG", "")
+	require.NoError(t, os.Unsetenv("ZHIPU_APIKEY"))
+	t.Cleanup(func() {
+		_ = os.Setenv("HOME", origHome)
+		_ = os.Setenv("WEB_TOOLS_CONFIG", origConfig)
+		if origAuth == "" {
+			_ = os.Unsetenv("ZHIPU_APIKEY")
+		} else {
+			_ = os.Setenv("ZHIPU_APIKEY", origAuth)
+		}
+	})
+
+	cmd := Cmd("test")
+	cmd.SetArgs([]string{"--check", "--json", "--skill-dir", filepath.Join(dir, "skills")})
+	output := captureStdout(t, func() {
+		require.NoError(t, cmd.Execute())
+	})
+
+	assert.Contains(t, output, `"ok": true`)
+	assert.Contains(t, output, `"install_skill"`)
+	assert.Contains(t, output, `"configure_provider"`)
+	assert.NotContains(t, output, "super-secret-token")
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	orig := os.Stdout

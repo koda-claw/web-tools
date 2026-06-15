@@ -324,7 +324,7 @@ func runCLI(t *testing.T, bin string, args []string, env map[string]string) (str
 	t.Helper()
 
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "WEB_READER_NO_BROWSER=1")
+	cmd.Env = isolatedCLIEnv(t)
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
@@ -336,4 +336,26 @@ func runCLI(t *testing.T, bin string, args []string, env map[string]string) (str
 	err := cmd.Run()
 	require.NoError(t, err, "stderr:\n%s\nstdout:\n%s", stderr.String(), stdout.String())
 	return stdout.String(), stderr.String()
+}
+
+func isolatedCLIEnv(t *testing.T) []string {
+	t.Helper()
+	blocked := map[string]bool{
+		"HOME":                  true,
+		"WEB_TOOLS_CONFIG":      true,
+		"WEB_TOOLS_ENV":         true,
+		"ZHIPU_APIKEY":          true,
+		"WEB_READER_NO_BROWSER": true,
+	}
+	out := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if blocked[key] {
+			continue
+		}
+		out = append(out, entry)
+	}
+	out = append(out, "HOME="+t.TempDir())
+	out = append(out, "WEB_READER_NO_BROWSER=1")
+	return out
 }

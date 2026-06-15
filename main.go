@@ -6,6 +6,7 @@ import (
 
 	configcmd "github.com/koda-claw/web-tools/cmd/config"
 	"github.com/koda-claw/web-tools/cmd/doctor"
+	guicmd "github.com/koda-claw/web-tools/cmd/gui"
 	setupcmd "github.com/koda-claw/web-tools/cmd/setup"
 	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
 	"github.com/koda-claw/web-tools/cmd/web-reader"
@@ -38,6 +39,7 @@ Zero cost. No API keys. No third-party dependencies.`,
 
 	rootCmd.AddCommand(configcmd.Cmd())
 	rootCmd.AddCommand(doctor.Cmd())
+	rootCmd.AddCommand(guicmd.Cmd(version))
 	rootCmd.AddCommand(setupcmd.Cmd(version))
 	rootCmd.AddCommand(skillcmd.Cmd(version))
 	rootCmd.AddCommand(webreader.Cmd())

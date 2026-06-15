@@ -4,10 +4,17 @@
 
 ### Added
 
+- `web-tools gui` local-only management console for setup status, provider/env management, smoke tests, diagnostics export, and Agent handoff commands.
+- `web-tools setup --check --json` readiness report with non-sensitive repair suggestions for CLI and GUI consumers.
 - `web-tools setup` for one-command Agent setup, optional provider configuration, skill install, and doctor checks.
 - User env file auto-loading from `~/.config/web-tools/.env`, with `WEB_TOOLS_ENV` override support.
 - `web-tools setup --set-env KEY=value` with `--env-file` and `--force-env` for non-interactive env file setup.
 - `doctor` env file diagnostics without exposing secret values.
+
+### Security
+
+- GUI and setup diagnostics expose `auth_env` and configured booleans only; token values are never returned.
+- GUI binds to `127.0.0.1` by default.
 
 ## v1.4.1 - 2026-06-15
 

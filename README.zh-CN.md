@@ -135,6 +135,13 @@ web-tools doctor --json
 
 # 从 CLI 安装或更新 Agent skill
 web-tools setup
+
+# 只检查 setup 状态，不改文件
+web-tools setup --check
+web-tools setup --check --json
+
+# 启动本地 GUI 控制台，适合人类配置和排障
+web-tools gui --no-open
 ```
 
 ## 测试
@@ -150,6 +157,27 @@ go test ./...
 ## Doctor
 
 用 `web-tools doctor` 检查本地配置和可选依赖。缺少 SearXNG、MarkItDown 或 agent-browser 等可选工具时会报告 warning；配置无效或缓存目录不可写会报告 error。
+
+## 本地 GUI
+
+`web-tools gui` 会启动一个只监听本机的管理控制台，用于人类配置和排障：
+
+```bash
+web-tools gui
+web-tools gui --no-open --port 0
+```
+
+GUI 默认绑定 `127.0.0.1`。它可以检查 setup 状态、配置 BigModel provider、写入 `~/.config/web-tools/.env`、运行基础 search/reader smoke test、导出非敏感诊断 JSON，并生成给 Agent 使用的 handoff 命令。
+
+GUI 不展示、不返回 secret 明文；`config.json` 只保存 `ZHIPU_APIKEY` 这样的环境变量名，不保存 token 值。
+
+Agent 和脚本默认仍然应该使用非交互 CLI：
+
+```bash
+web-tools setup --check --json
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
+web-tools skill install --force
+```
 
 ## 配置
 

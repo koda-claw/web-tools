@@ -259,6 +259,8 @@ WEB_TOOLS_ENV=~/.config/web-tools/.env web-tools web-search "Go readability libr
 
 目标：让用户和 Agent 更容易知道“缺什么、下一步做什么”。这部分不再单独发布，而是并入 `v1.5.0 Local GUI 管理台` 的 Milestone 1。
 
+实现状态：已并入 `v1.5.0`，由 `web-tools setup --check`、`web-tools setup --check --json` 和 GUI `/api/status` 共同消费同一套 `internal/setupcheck` 报告。
+
 #### Task 22: setup --check
 
 **实现**
@@ -298,6 +300,8 @@ Run: web-tools setup --provider bigmodel --set-env ZHIPU_APIKEY=<redacted>
 ### 后续并入 v1.5.0: 人类交互式配置
 
 目标：为人类本地首次配置提供安全交互式体验。`v1.5.0` 明确由 GUI 承担这部分能力，CLI `setup --interactive` 暂不进入本轮；CLI 保持非交互，继续服务 Agent 和脚本。
+
+实现状态：已由 `web-tools gui` 承担。CLI 继续提供非交互命令给 Agent 和脚本使用。
 
 #### Task 24: GUI interactive setup
 

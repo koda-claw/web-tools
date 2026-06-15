@@ -1,6 +1,7 @@
 package setupcmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/setupcheck"
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +31,8 @@ func Cmd(version string) *cobra.Command {
 		flagSetEnv           string
 		flagForceEnv         bool
 		flagSkipDoctor       bool
+		flagCheck            bool
+		flagJSON             bool
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +47,24 @@ what still needs attention.`,
   web-tools setup --provider bigmodel --enable-search-auto --install-skill`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if flagCheck {
+				report := setupcheck.Run(setupcheck.Options{
+					Version:  version,
+					SkillDir: flagSkillDir,
+					Provider: flagProvider,
+					AuthEnv:  flagAuthEnv,
+				})
+				if flagJSON {
+					data, _ := json.MarshalIndent(report, "", "  ")
+					fmt.Println(string(data))
+				} else {
+					fmt.Print(report.RenderText())
+				}
+				if !report.OK {
+					os.Exit(1)
+				}
+				return
+			}
 			opts := Options{
 				Version:          version,
 				Provider:         flagProvider,
@@ -78,6 +100,8 @@ what still needs attention.`,
 	cmd.Flags().StringVar(&flagSetEnv, "set-env", "", "Write KEY=value to env file without printing the value")
 	cmd.Flags().BoolVar(&flagForceEnv, "force-env", false, "Overwrite an existing key in env file")
 	cmd.Flags().BoolVar(&flagSkipDoctor, "skip-doctor", false, "Skip final doctor check")
+	cmd.Flags().BoolVar(&flagCheck, "check", false, "Check setup readiness without modifying files")
+	cmd.Flags().BoolVar(&flagJSON, "json", false, "JSON structured output for --check")
 	return cmd
 }
 

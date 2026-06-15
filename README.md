@@ -133,6 +133,13 @@ web-tools doctor --json
 
 # Install/update the Agent skill from the CLI
 web-tools setup
+
+# Inspect setup readiness without changing files
+web-tools setup --check
+web-tools setup --check --json
+
+# Start the local GUI console for human setup
+web-tools gui --no-open
 ```
 
 ## Test
@@ -151,6 +158,25 @@ browser.
 ## Doctor
 
 Use `web-tools doctor` to check local configuration and optional dependencies. Missing optional tools such as SearXNG, MarkItDown, or agent-browser are reported as warnings; invalid config or an unwritable cache directory is reported as an error.
+
+## Local GUI
+
+`web-tools gui` starts a local-only management console for human setup and diagnostics:
+
+```bash
+web-tools gui
+web-tools gui --no-open --port 0
+```
+
+The GUI binds to `127.0.0.1` by default. It can inspect setup readiness, configure the BigModel provider, write `~/.config/web-tools/.env`, run basic search/reader smoke tests, export non-sensitive diagnostics, and generate Agent handoff commands. It never displays or returns secret values; `config.json` stores only environment variable names such as `ZHIPU_APIKEY`.
+
+For agents and scripts, prefer the non-interactive CLI:
+
+```bash
+web-tools setup --check --json
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
+web-tools skill install --force
+```
 
 ## Configuration
 

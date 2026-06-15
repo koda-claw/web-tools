@@ -31,6 +31,9 @@ go run . skill --help >/dev/null
 echo "[smoke] setup help"
 go run . setup --help >/dev/null
 
+echo "[smoke] gui help"
+go run . gui --help >/dev/null
+
 echo "[smoke] version"
 go run . --version >/dev/null
 
@@ -95,5 +98,45 @@ fi
 test -f "$tmp_dir/setup-skills/web-tools/SKILL.md"
 grep -q '"bigmodel"' "$tmp_dir/setup-config.json"
 grep -q 'ZHIPU_APIKEY=fake-smoke-token' "$tmp_dir/setup.env"
+
+echo "[smoke] setup check json"
+go build -o "$tmp_dir/web-tools" .
+setup_check_home="$tmp_dir/setup-check-home"
+mkdir -p "$setup_check_home"
+HOME="$setup_check_home" "$tmp_dir/web-tools" setup \
+  --check \
+  --json \
+  --skill-dir "$tmp_dir/setup-check-skills" >"$tmp_dir/setup-check.json"
+grep -q '"ok": true' "$tmp_dir/setup-check.json"
+grep -q '"skill"' "$tmp_dir/setup-check.json"
+grep -q '"install_skill"' "$tmp_dir/setup-check.json"
+grep -q '"configure_provider"' "$tmp_dir/setup-check.json"
+
+echo "[smoke] gui server"
+gui_home="$tmp_dir/gui-home"
+mkdir -p "$gui_home"
+HOME="$gui_home" "$tmp_dir/web-tools" gui --no-open --port 0 >"$tmp_dir/gui.out" 2>"$tmp_dir/gui.err" &
+gui_pid=$!
+for _ in {1..50}; do
+  if grep -q 'web-tools GUI:' "$tmp_dir/gui.out"; then
+    break
+  fi
+  sleep 0.1
+done
+gui_url="$(awk '/web-tools GUI:/ {print $3}' "$tmp_dir/gui.out" | tail -n1)"
+if [[ -z "$gui_url" ]]; then
+  echo "GUI did not print URL" >&2
+  cat "$tmp_dir/gui.err" >&2 || true
+  kill "$gui_pid" 2>/dev/null || true
+  exit 1
+fi
+curl -fsS "$gui_url/healthz" >"$tmp_dir/gui-health.json"
+grep -q '"ok":true' "$tmp_dir/gui-health.json"
+curl -fsS "$gui_url/api/status" >"$tmp_dir/gui-status.json"
+grep -q '"setup"' "$tmp_dir/gui-status.json"
+curl -fsS "$gui_url/api/diagnostics" >"$tmp_dir/gui-diagnostics.json"
+grep -q '"agent_guide"' "$tmp_dir/gui-diagnostics.json"
+kill "$gui_pid" 2>/dev/null || true
+wait "$gui_pid" 2>/dev/null || true
 
 echo "[smoke] ok"

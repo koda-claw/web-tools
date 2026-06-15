@@ -33,6 +33,7 @@ Then verify the runtime:
 ```bash
 web-tools --version
 web-tools doctor --json
+web-tools setup --check --json
 ```
 
 If the CLI binary is installed but this skill is missing or stale, install it
@@ -46,6 +47,9 @@ For agents that only have the repository URL, either run `web-tools skill
 install` after installing the binary, or copy `skills/web-tools` from the source
 checkout into the agent's local skills directory.
 
+`web-tools gui` is for human local setup and diagnostics. Agents should use the
+non-interactive CLI commands in this skill instead of depending on the GUI.
+
 ## Prerequisites
 
 - **web-reader**: Works standalone, no external services needed. Optional dependencies:
@@ -55,6 +59,38 @@ checkout into the agent's local skills directory.
   - SearXNG (aggregates Google, Bing, DDG): requires Docker → `cd docker && docker compose up -d`
   - Verify SearXNG: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
   - Optional MCP providers can be configured through `providers.<id>` and selected with `--provider`
+
+## Setup and provider configuration
+
+Use setup check before changing configuration:
+
+```bash
+web-tools setup --check --json
+```
+
+If BigModel/Zhipu MCP is needed, configure it through the CLI. Do not hand-edit
+`config.json` unless a user explicitly asks for it:
+
+```bash
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --skip-doctor
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=<token> --skip-doctor
+web-tools setup --check --json
+```
+
+The token is stored in `~/.config/web-tools/.env` with `0600` permissions when
+`--set-env` is used. `config.json` stores only `auth_env`, never the token
+value. Existing shell environment variables take precedence over the env file.
+
+Enable provider auto chains only when the user has accepted any remote provider
+privacy and cost implications:
+
+```bash
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --enable-search-auto --skip-doctor
+web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --enable-reader-auto --skip-doctor
+```
+
+`reader auto` starts as `builtin-reader`. Do not silently add remote reader
+fallbacks; ask for or rely on explicit user confirmation.
 
 ## Building
 
