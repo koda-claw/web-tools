@@ -111,7 +111,7 @@
         <article class="panel">
           <div class="panel-head">
             <h2 data-i18n="readerTest">Reader Test</h2>
-            <span class="pill">builtin</span>
+            <span class="pill" id="reader-provider-pill">builtin</span>
           </div>
           <form id="reader-form" class="form-stack">
             <label>
@@ -121,7 +121,9 @@
             <label>
               <span data-i18n="provider">Provider</span>
               <select name="provider">
+                <option value="auto">auto</option>
                 <option value="builtin-reader">builtin-reader</option>
+                <option value="bigmodel">bigmodel</option>
               </select>
             </label>
             <button type="submit" data-i18n="runReader">Run Reader</button>

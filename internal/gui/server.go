@@ -16,6 +16,8 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/provider"
+	mcpprovider "github.com/koda-claw/web-tools/internal/provider/mcp"
 	"github.com/koda-claw/web-tools/internal/reader"
 	"github.com/koda-claw/web-tools/internal/search"
 	"github.com/koda-claw/web-tools/internal/setupcheck"
@@ -321,13 +323,23 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 		cfg.Reader.DefaultTimeout = int(timeoutFromMS(req.TimeoutMS, 20*time.Second).Seconds())
 	}
 	providerID := req.Provider
-	if providerID == "" || providerID == "auto" {
+	if providerID == "" {
+		providerID = "auto"
+	}
+	if providerID == "auto" && len(cfg.Reader.DefaultProviderChain) == 0 {
 		providerID = "builtin-reader"
 	}
-	if providerID != "builtin-reader" {
-		writeError(w, apperrors.NewInputError("reader test provider is not available in GUI", fmt.Sprintf("got %q", providerID), []string{"use provider=builtin-reader for local smoke"}))
+	selected, err := selectGUIReaderProvider(*cfg, providerID)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
+
+	if selected.ID != "builtin-reader" {
+		s.handleProviderReaderTest(w, input, *cfg, selected)
+		return
+	}
+
 	fetcher := reader.NewFetcher(cfg.Reader)
 	fetchResult, err := fetcher.Fetch(input.URL.String())
 	if err != nil {
@@ -340,21 +352,98 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	content := extracted.Content
-	if len(content) > 4000 {
-		content = content[:4000] + "\n\n... (truncated)"
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true,
 		"result": map[string]any{
 			"source":       input.URL.String(),
 			"url":          fetchResult.URL,
 			"title":        extracted.Title,
-			"content":      content,
+			"content":      extracted.Content,
+			"text_content": extracted.TextContent,
 			"word_count":   len(strings.Fields(extracted.TextContent)),
 			"content_type": reader.GuessContentType(input.URL.String(), extracted.SiteName, extracted.Metadata),
 			"extract_mode": "readability",
 			"fetched_at":   time.Now(),
+			"provider":     selected.ID,
+		},
+	})
+}
+
+func selectGUIReaderProvider(cfg config.Config, requested string) (provider.Provider, error) {
+	reg, err := provider.NewRegistry(cfg.Providers)
+	if err != nil {
+		return provider.Provider{}, err
+	}
+	switch requested {
+	case "", "auto":
+		chain := cfg.Reader.DefaultProviderChain
+		if len(chain) == 0 {
+			chain = []string{"builtin-reader"}
+		}
+		providers, _, err := reg.ResolveChain(chain, provider.CapabilityReader)
+		if err != nil {
+			return provider.Provider{}, err
+		}
+		if len(providers) == 0 {
+			return provider.Provider{}, apperrors.NewInputError(
+				"no reader providers available",
+				"reader auto chain did not resolve to any enabled reader providers",
+				[]string{"check reader.default_provider_chain", "configure provider auth envs"},
+			)
+		}
+		return providers[0], nil
+	default:
+		selected, err := reg.Get(requested, provider.CapabilityReader)
+		if err != nil {
+			return provider.Provider{}, err
+		}
+		if selected.ID != "builtin-reader" && selected.Config.Type != "mcp" {
+			return provider.Provider{}, apperrors.NewInputError(
+				"reader provider is not implemented in GUI",
+				fmt.Sprintf("provider %q uses unsupported type %q", requested, selected.Config.Type),
+				[]string{"use builtin-reader", "use a provider with type mcp"},
+			)
+		}
+		return selected, nil
+	}
+}
+
+func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.Input, cfg config.Config, selected provider.Provider) {
+	client := mcpprovider.NewClient(selected.Config, os.Getenv(selected.Config.AuthEnv))
+	result, err := client.Read(context.Background(), input.URL.String())
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	content := result.Content
+	metadata := result.Metadata
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	metadata["provider"] = selected.ID
+	metadata["provider_type"] = selected.Config.Type
+	title := result.Title
+	if title == "" {
+		title = input.URL.String()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true,
+		"result": map[string]any{
+			"source":       input.URL.String(),
+			"url":          result.URL,
+			"title":        title,
+			"content":      content,
+			"text_content": content,
+			"word_count":   len(strings.Fields(content)),
+			"content_type": reader.GuessContentType(input.URL.String(), "", metadata),
+			"extract_mode": "provider:" + selected.ID,
+			"fetched_at":   time.Now(),
+			"provider":     selected.ID,
+			"metadata":     metadata,
+			"quality": map[string]any{
+				"word_count": len(strings.Fields(content)),
+				"min_words":  cfg.Reader.MinContentLength,
+			},
 		},
 	})
 }

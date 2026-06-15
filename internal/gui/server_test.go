@@ -84,9 +84,10 @@ func TestProviderAndEnvAPIsWriteConfigWithoutLeakingValue(t *testing.T) {
 
 func TestReaderTestAPIWithLocalServer(t *testing.T) {
 	dir := isolatedHome(t)
+	longContent := strings.Repeat("full-content-marker ", 320)
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`<html><head><title>Local Page</title></head><body><article><h1>Local Page</h1><p>This is enough content for a local reader smoke test with useful words.</p></article></body></html>`))
+		_, _ = w.Write([]byte(`<html><head><title>Local Page</title></head><body><article><h1>Local Page</h1><p>This is enough content for a local reader smoke test with useful words.</p><p>` + longContent + `</p></article></body></html>`))
 	}))
 	defer page.Close()
 
@@ -97,6 +98,25 @@ func TestReaderTestAPIWithLocalServer(t *testing.T) {
 
 	assert.Contains(t, body, `"ok":true`)
 	assert.Contains(t, body, "Local Page")
+	assert.Greater(t, strings.Count(body, "full-content-marker"), 250)
+	assert.NotContains(t, body, "truncated")
+}
+
+func TestReaderTestAPIBigModelRequiresAuth(t *testing.T) {
+	dir := isolatedHome(t)
+	cfg := &config.EditableConfig{}
+	config.AddBigModelProvider(cfg, "ZHIPU_APIKEY", false, false)
+	require.NoError(t, config.SaveEditableConfig(config.UserConfigPath(), cfg))
+	require.NoError(t, os.Unsetenv("ZHIPU_APIKEY"))
+
+	rr := request(t, NewServer(Options{Version: "test", SkillDir: filepath.Join(dir, "skills")}), http.MethodPost, "/api/test/reader", map[string]any{
+		"url":      "https://example.com",
+		"provider": "bigmodel",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "provider auth is not configured")
+	assert.Contains(t, rr.Body.String(), "ZHIPU_APIKEY")
 }
 
 func TestDiagnosticsContainsGuideAndNoSecret(t *testing.T) {

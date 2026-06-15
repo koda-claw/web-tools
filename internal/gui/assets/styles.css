@@ -268,6 +268,11 @@ h2 {
   color: var(--accent);
 }
 
+.secondary-button.active {
+  border-color: var(--accent);
+  background: rgba(15, 92, 102, 0.1);
+}
+
 .reader-card,
 .empty-state,
 .inline-error {
@@ -288,6 +293,48 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.markdown-view {
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  line-height: 1.55;
+}
+
+.markdown-view h3,
+.markdown-view h4,
+.markdown-view h5 {
+  margin: 14px 0 8px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.markdown-view p {
+  margin: 0 0 10px;
+}
+
+.markdown-view blockquote {
+  margin: 0 0 10px;
+  border-left: 3px solid var(--accent);
+  padding-left: 10px;
+  color: var(--muted);
+}
+
+.markdown-view code {
+  border-radius: 4px;
+  background: rgba(15, 92, 102, 0.08);
+  padding: 1px 4px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+.markdown-view pre {
+  overflow: auto;
+  border-radius: 6px;
+  background: #101716;
+  color: #d7efe6;
+  padding: 10px;
+}
+
+.markdown-view a {
+  color: var(--accent);
+}
+
 .inline-error {
   border-color: rgba(180, 35, 24, 0.35);
   color: var(--error);
@@ -305,6 +352,16 @@ h2 {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.button-row.compact {
+  gap: 6px;
+}
+
+.button-row.compact button {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
 }
 
 label {

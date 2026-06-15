@@ -40,6 +40,10 @@ const messages = {
     read: "Read",
     open: "Open",
     copyContent: "Copy content",
+    viewText: "Text",
+    viewMarkdown: "Markdown",
+    preview: "Preview",
+    fullContent: "Full",
     noResults: "No results",
     searchResults: "Search results",
     readerPreview: "Reader preview",
@@ -96,6 +100,10 @@ const messages = {
     read: "读取",
     open: "打开",
     copyContent: "复制正文",
+    viewText: "文本",
+    viewMarkdown: "Markdown",
+    preview: "预览",
+    fullContent: "完整",
     noResults: "没有结果",
     searchResults: "搜索结果",
     readerPreview: "读取预览",
@@ -214,6 +222,7 @@ async function refresh() {
   state.guide = guide.guide;
   renderStatus(status);
   renderGuide(guide.guide);
+  updateReaderProviderOptions(status.setup);
 }
 
 function renderStatus(data) {
@@ -230,6 +239,7 @@ function renderStatus(data) {
   $("provider-pill").className = `pill ${setup.provider.configured ? "ok" : "warn"}`;
   $("env-pill").textContent = setup.env_file.user_exists ? setup.env_file.user_permission : t("missing");
   $("env-pill").className = `pill ${setup.env_file.user_permission === "ok" ? "ok" : "warn"}`;
+  $("reader-provider-pill").textContent = setup.reader_auto.contains ? "auto+" : "builtin";
 
   $("checks").innerHTML = setup.checks
     .map((check) => {
@@ -243,6 +253,18 @@ function renderStatus(data) {
       </div>`;
     })
     .join("");
+}
+
+function updateReaderProviderOptions(setup) {
+  const select = $("reader-form").elements.provider;
+  const bigmodel = [...select.options].find((option) => option.value === "bigmodel");
+  if (!bigmodel) return;
+  const ready = Boolean(setup.provider.configured && setup.provider.auth_configured);
+  bigmodel.disabled = !ready;
+  bigmodel.textContent = ready ? "bigmodel" : "bigmodel (auth required)";
+  if (select.value === "bigmodel" && !ready) {
+    select.value = "builtin-reader";
+  }
 }
 
 function renderGuide(guide) {
@@ -321,22 +343,57 @@ function renderReaderResult(data) {
     return;
   }
   const content = result.content || result.text_content || "";
-  const preview = previewText(content, 1200);
+  const textPreview = previewText(content, 1200);
+  const fullAvailable = content.length > textPreview.length;
   container.innerHTML = `
     <div class="reader-card">
       <div class="result-head">
         <strong>${escapeHTML(result.title || result.source || t("readerPreview"))}</strong>
-        <button class="secondary-button" id="copy-reader-content" type="button">${escapeHTML(t("copyContent"))}</button>
+        <div class="button-row compact">
+          <button class="secondary-button view-mode active" type="button" data-view-mode="markdown">${escapeHTML(t("viewMarkdown"))}</button>
+          <button class="secondary-button view-mode" type="button" data-view-mode="text">${escapeHTML(t("viewText"))}</button>
+          <button class="secondary-button content-size active" type="button" data-content-size="preview">${escapeHTML(t("preview"))}</button>
+          <button class="secondary-button content-size" type="button" data-content-size="full" ${fullAvailable ? "" : "disabled"}>${escapeHTML(t("fullContent"))}</button>
+          <button class="secondary-button" id="copy-reader-content" type="button">${escapeHTML(t("copyContent"))}</button>
+        </div>
       </div>
       <div class="meta-row wrap">
         <span>${escapeHTML(t("source"))}: ${escapeHTML(result.source || result.url || "")}</span>
+        <span>${escapeHTML(t("provider"))}: ${escapeHTML(result.provider || "")}</span>
         <span>${escapeHTML(t("words"))}: ${escapeHTML(result.word_count || 0)}</span>
         <span>${escapeHTML(t("contentType"))}: ${escapeHTML(result.content_type || "")}</span>
         <span>${escapeHTML(t("extractMode"))}: ${escapeHTML(result.extract_mode || "")}</span>
       </div>
-      <div class="reader-preview">${escapeHTML(preview)}</div>
+      <div class="reader-preview markdown-view" id="reader-preview"></div>
     </div>
   `;
+  const preview = $("reader-preview");
+  const renderContent = () => {
+    const mode = container.querySelector(".view-mode.active")?.dataset.viewMode || "markdown";
+    const size = container.querySelector(".content-size.active")?.dataset.contentSize || "preview";
+    const visibleContent = size === "full" ? content : textPreview;
+    preview.className = `reader-preview ${mode === "markdown" ? "markdown-view" : ""}`;
+    if (mode === "markdown") {
+      preview.innerHTML = renderMarkdown(visibleContent);
+    } else {
+      preview.textContent = visibleContent;
+    }
+  };
+  container.querySelectorAll(".view-mode").forEach((button) => {
+    button.addEventListener("click", () => {
+      container.querySelectorAll(".view-mode").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderContent();
+    });
+  });
+  container.querySelectorAll(".content-size").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.disabled) return;
+      container.querySelectorAll(".content-size").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      renderContent();
+    });
+  });
   const copy = $("copy-reader-content");
   copy.addEventListener("click", async () => {
     await navigator.clipboard.writeText(content);
@@ -345,6 +402,7 @@ function renderReaderResult(data) {
       copy.textContent = t("copyContent");
     }, 1200);
   });
+  renderContent();
 }
 
 function renderInlineError(targetID, err) {
@@ -390,10 +448,11 @@ function persistReaderResult(data) {
     source: result.source,
     url: result.url,
     title: result.title,
-    content: previewText(content, 4000),
+    content: previewText(content, 1200),
     word_count: result.word_count,
     content_type: result.content_type,
     extract_mode: result.extract_mode,
+    provider: result.provider,
   };
 }
 
@@ -401,6 +460,70 @@ function previewText(value, limit) {
   const text = String(value || "").trim();
   if (text.length <= limit) return text;
   return `${text.slice(0, limit).trim()}\n\n...`;
+}
+
+function renderMarkdown(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const html = [];
+  let inCode = false;
+  let paragraph = [];
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      if (inCode) {
+        html.push("</code></pre>");
+        inCode = false;
+      } else {
+        flushParagraph();
+        html.push("<pre><code>");
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      html.push(escapeHTML(line) + "\n");
+      continue;
+    }
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      continue;
+    }
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      const level = heading[1].length + 2;
+      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+    if (/^[-*]\s+/.test(trimmed)) {
+      flushParagraph();
+      html.push(`<p class="md-list">• ${inlineMarkdown(trimmed.replace(/^[-*]\s+/, ""))}</p>`);
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      flushParagraph();
+      html.push(`<blockquote>${inlineMarkdown(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
+      continue;
+    }
+    paragraph.push(trimmed);
+  }
+  flushParagraph();
+  if (inCode) {
+    html.push("</code></pre>");
+  }
+  return html.join("");
+}
+
+function inlineMarkdown(value) {
+  return escapeHTML(value)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
 }
 
 function pill(text, status) {

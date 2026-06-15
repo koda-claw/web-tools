@@ -363,11 +363,18 @@ POST /api/test/reader
 - Reader Test 成功后，在 Reader Test 卡片内渲染：
   - title。
   - source URL。
+  - provider。
   - word count。
   - content type。
   - extract mode。
   - content preview。
   - copy content。
+- Reader Test provider 支持 `auto`、`builtin-reader`、`bigmodel`：
+  - `builtin-reader` 使用本地 readability。
+  - `bigmodel` 使用已配置的 MCP reader provider。
+  - `auto` 只遵循显式配置的 `reader.default_provider_chain`，不偷偷启用远程 fallback。
+- Reader Test API 返回完整内容，不在后端截断；前端默认预览显示，可切换 Full。
+- Reader 视图支持 Text / Markdown 切换，Markdown 渲染必须先转义 HTML，避免执行页面内容。
 - Output / Diagnostics 继续保留 raw JSON 或错误信息，作为排障入口。
 - 暂不引入 Modal。完整内容查看、Raw JSON Modal、历史记录等后续单独迭代。
 
@@ -391,6 +398,9 @@ POST /api/test/reader
 - Search 成功后卡片内显示结果列表。
 - 点击结果 `Read` 后自动触发 Reader Test。
 - Reader 成功后显示标题、source、word count、extract mode、正文预览。
+- Reader provider 可选择 BigModel；未配置或未认证时 BigModel 选项不可用或返回可诊断错误。
+- Reader API 不截断返回内容；前端 Preview / Full 可切换。
+- Markdown 视图渲染常见 Markdown，同时不执行 HTML。
 - Search / Reader 失败时，在对应卡片内显示错误摘要。
 - 刷新页面后恢复测试输入和最近一次非敏感结果预览。
 - Env token 输入刷新后必须为空。
