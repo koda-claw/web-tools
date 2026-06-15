@@ -105,6 +105,7 @@
             </label>
             <button type="submit" data-i18n="runSearch">Run Search</button>
           </form>
+          <div class="result-surface" id="search-results"></div>
         </article>
 
         <article class="panel">
@@ -125,6 +126,7 @@
             </label>
             <button type="submit" data-i18n="runReader">Run Reader</button>
           </form>
+          <div class="result-surface" id="reader-result"></div>
         </article>
 
         <article class="panel span-2">
@@ -138,7 +140,10 @@
         <article class="panel span-2">
           <div class="panel-head">
             <h2 data-i18n="diagnostics">Diagnostics</h2>
-            <button id="download-diagnostics" type="button" data-i18n="exportJson">Export JSON</button>
+            <div class="button-row">
+              <button id="clear-state" type="button" data-i18n="clearState">Clear State</button>
+              <button id="download-diagnostics" type="button" data-i18n="exportJson">Export JSON</button>
+            </div>
           </div>
           <pre id="output" class="codebox"></pre>
         </article>

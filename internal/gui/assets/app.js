@@ -2,9 +2,12 @@ const state = {
   status: null,
   guide: null,
   lang: detectLanguage(),
+  searchResult: null,
+  readerResult: null,
 };
 
 const $ = (id) => document.getElementById(id);
+const UI_STATE_KEY = "web-tools-gui-state-v1";
 
 const messages = {
   en: {
@@ -33,6 +36,19 @@ const messages = {
     copied: "Copied",
     diagnostics: "Diagnostics",
     exportJson: "Export JSON",
+    clearState: "Clear State",
+    read: "Read",
+    open: "Open",
+    copyContent: "Copy content",
+    noResults: "No results",
+    searchResults: "Search results",
+    readerPreview: "Reader preview",
+    words: "words",
+    source: "source",
+    engine: "engine",
+    contentType: "content type",
+    extractMode: "extract mode",
+    lastError: "Last error",
     version: "version",
     skillInstalled: "skill installed",
     skillMissing: "skill missing",
@@ -76,6 +92,19 @@ const messages = {
     copied: "已复制",
     diagnostics: "诊断",
     exportJson: "导出 JSON",
+    clearState: "清空状态",
+    read: "读取",
+    open: "打开",
+    copyContent: "复制正文",
+    noResults: "没有结果",
+    searchResults: "搜索结果",
+    readerPreview: "读取预览",
+    words: "词",
+    source: "来源",
+    engine: "引擎",
+    contentType: "内容类型",
+    extractMode: "提取模式",
+    lastError: "最近错误",
     version: "版本",
     skillInstalled: "skill 已安装",
     skillMissing: "skill 缺失",
@@ -115,6 +144,55 @@ function applyLanguage() {
   $("refresh").title = t("refresh");
   const selector = $("language-select");
   selector.value = state.lang;
+}
+
+function loadUIState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_STATE_KEY) || "{}");
+    if (saved.searchForm) {
+      setFormValues($("search-form"), saved.searchForm);
+    }
+    if (saved.readerForm) {
+      setFormValues($("reader-form"), saved.readerForm);
+    }
+    state.searchResult = saved.searchResult || null;
+    state.readerResult = saved.readerResult || null;
+  } catch {
+    state.searchResult = null;
+    state.readerResult = null;
+  }
+}
+
+function saveUIState() {
+  const payload = {
+    searchForm: formJSON($("search-form")),
+    readerForm: formJSON($("reader-form")),
+    searchResult: state.searchResult,
+    readerResult: state.readerResult,
+  };
+  localStorage.setItem(UI_STATE_KEY, JSON.stringify(payload));
+}
+
+function clearUIState() {
+  localStorage.removeItem(UI_STATE_KEY);
+  state.searchResult = null;
+  state.readerResult = null;
+  $("search-results").innerHTML = "";
+  $("reader-result").innerHTML = "";
+  $("output").textContent = "";
+}
+
+function setFormValues(form, values) {
+  Object.entries(values || {}).forEach(([key, value]) => {
+    if (key === "value") return;
+    const field = form.elements[key];
+    if (!field) return;
+    if (field.type === "checkbox") {
+      field.checked = Boolean(value);
+    } else {
+      field.value = value;
+    }
+  });
 }
 
 async function api(path, options = {}) {
@@ -196,6 +274,135 @@ function renderGuide(guide) {
   $("agent-guide").textContent = lines.join("\n");
 }
 
+function renderSearchResults(data) {
+  const result = data && data.result ? data.result : data;
+  const results = result && Array.isArray(result.results) ? result.results : [];
+  const container = $("search-results");
+  if (!results.length) {
+    container.innerHTML = `<div class="empty-state">${escapeHTML(t("noResults"))}</div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="result-head">
+      <strong>${escapeHTML(t("searchResults"))}</strong>
+      <span>${escapeHTML(result.engine || result.provider || "")} · ${results.length}</span>
+    </div>
+    <div class="search-list">
+      ${results.map((item) => renderSearchItem(item, result)).join("")}
+    </div>
+  `;
+}
+
+function renderSearchItem(item, result) {
+  const url = item.url || "";
+  const engines = Array.isArray(item.engines) ? item.engines.join(", ") : result.engine || "";
+  return `
+    <div class="search-item">
+      <div class="result-rank">${escapeHTML(item.rank || "")}</div>
+      <div class="result-body">
+        <a class="result-title" href="${escapeAttr(url)}" target="_blank" rel="noreferrer">${escapeHTML(item.title || url)}</a>
+        <div class="result-url">${escapeHTML(url)}</div>
+        <p>${escapeHTML(item.snippet || "")}</p>
+        <div class="meta-row">
+          <span>${escapeHTML(t("source"))}: ${escapeHTML(item.source || "")}</span>
+          <span>${escapeHTML(t("engine"))}: ${escapeHTML(engines)}</span>
+        </div>
+      </div>
+      <button class="secondary-button read-result" type="button" data-url="${escapeAttr(url)}">${escapeHTML(t("read"))}</button>
+    </div>
+  `;
+}
+
+function renderReaderResult(data) {
+  const result = data && data.result ? data.result : data;
+  const container = $("reader-result");
+  if (!result) {
+    container.innerHTML = "";
+    return;
+  }
+  const content = result.content || result.text_content || "";
+  const preview = previewText(content, 1200);
+  container.innerHTML = `
+    <div class="reader-card">
+      <div class="result-head">
+        <strong>${escapeHTML(result.title || result.source || t("readerPreview"))}</strong>
+        <button class="secondary-button" id="copy-reader-content" type="button">${escapeHTML(t("copyContent"))}</button>
+      </div>
+      <div class="meta-row wrap">
+        <span>${escapeHTML(t("source"))}: ${escapeHTML(result.source || result.url || "")}</span>
+        <span>${escapeHTML(t("words"))}: ${escapeHTML(result.word_count || 0)}</span>
+        <span>${escapeHTML(t("contentType"))}: ${escapeHTML(result.content_type || "")}</span>
+        <span>${escapeHTML(t("extractMode"))}: ${escapeHTML(result.extract_mode || "")}</span>
+      </div>
+      <div class="reader-preview">${escapeHTML(preview)}</div>
+    </div>
+  `;
+  const copy = $("copy-reader-content");
+  copy.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(content);
+    copy.textContent = t("copied");
+    setTimeout(() => {
+      copy.textContent = t("copyContent");
+    }, 1200);
+  });
+}
+
+function renderInlineError(targetID, err) {
+  $(targetID).innerHTML = `
+    <div class="inline-error">
+      <strong>${escapeHTML(t("lastError"))}</strong>
+      <p>${escapeHTML(err.message || String(err))}</p>
+    </div>
+  `;
+}
+
+function renderPersistedResults() {
+  if (state.searchResult) {
+    renderSearchResults({ result: state.searchResult });
+  }
+  if (state.readerResult) {
+    renderReaderResult({ result: state.readerResult });
+  }
+}
+
+function persistSearchResult(data) {
+  const result = data.result || data;
+  state.searchResult = {
+    query: result.query,
+    engine: result.engine,
+    provider: result.provider,
+    total: result.total,
+    results: (result.results || []).slice(0, 10).map((item) => ({
+      rank: item.rank,
+      title: item.title,
+      url: item.url,
+      snippet: item.snippet,
+      source: item.source,
+      engines: item.engines,
+    })),
+  };
+}
+
+function persistReaderResult(data) {
+  const result = data.result || data;
+  const content = result.content || result.text_content || "";
+  state.readerResult = {
+    source: result.source,
+    url: result.url,
+    title: result.title,
+    content: previewText(content, 4000),
+    word_count: result.word_count,
+    content_type: result.content_type,
+    extract_mode: result.extract_mode,
+  };
+}
+
+function previewText(value, limit) {
+  const text = String(value || "").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit).trim()}\n\n...`;
+}
+
 function pill(text, status) {
   const span = document.createElement("span");
   span.className = `pill ${status}`;
@@ -215,7 +422,7 @@ function formJSON(form) {
   return out;
 }
 
-async function submitForm(form, path, transform = (v) => v) {
+async function submitForm(form, path, transform = (v) => v, onSuccess, onError) {
   const button = form.querySelector("button[type='submit']");
   button.disabled = true;
   try {
@@ -224,9 +431,12 @@ async function submitForm(form, path, transform = (v) => v) {
       body: JSON.stringify(transform(formJSON(form))),
     });
     $("output").textContent = JSON.stringify(redact(data), null, 2);
+    if (onSuccess) onSuccess(data);
+    saveUIState();
     await refresh();
   } catch (err) {
     $("output").textContent = err.message;
+    if (onError) onError(err);
   } finally {
     button.disabled = false;
   }
@@ -248,6 +458,10 @@ function escapeHTML(value) {
     .replaceAll("'", "&#039;");
 }
 
+function escapeAttr(value) {
+  return escapeHTML(value).replaceAll("`", "&#096;");
+}
+
 $("refresh").addEventListener("click", refresh);
 $("language-select").addEventListener("change", (event) => {
   state.lang = event.target.value === "zh" ? "zh" : "en";
@@ -266,11 +480,21 @@ $("env-form").addEventListener("submit", (event) => {
 });
 $("search-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  submitForm(event.currentTarget, "/api/test/search", (data) => ({ ...data, limit: 3 }));
+  submitSearch(event.currentTarget);
 });
 $("reader-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  submitForm(event.currentTarget, "/api/test/reader");
+  submitReader(event.currentTarget);
+});
+$("search-results").addEventListener("click", (event) => {
+  const button = event.target.closest(".read-result");
+  if (!button) return;
+  const url = button.dataset.url;
+  if (!url) return;
+  const readerForm = $("reader-form");
+  readerForm.elements.url.value = url;
+  saveUIState();
+  submitReader(readerForm);
 });
 $("copy-guide").addEventListener("click", async () => {
   await navigator.clipboard.writeText($("agent-guide").textContent);
@@ -280,6 +504,7 @@ $("copy-guide").addEventListener("click", async () => {
     button.textContent = t("copy");
   }, 1200);
 });
+$("clear-state").addEventListener("click", clearUIState);
 $("download-diagnostics").addEventListener("click", async () => {
   const data = await api("/api/diagnostics");
   const blob = new Blob([JSON.stringify(redact(data), null, 2)], { type: "application/json" });
@@ -292,6 +517,34 @@ $("download-diagnostics").addEventListener("click", async () => {
 });
 
 applyLanguage();
+loadUIState();
+renderPersistedResults();
 refresh().catch((err) => {
   $("output").textContent = err.message;
 });
+
+function submitSearch(form) {
+  submitForm(
+    form,
+    "/api/test/search",
+    (data) => ({ ...data, limit: 3 }),
+    (data) => {
+      persistSearchResult(data);
+      renderSearchResults(data);
+    },
+    (err) => renderInlineError("search-results", err),
+  );
+}
+
+function submitReader(form) {
+  submitForm(
+    form,
+    "/api/test/reader",
+    (data) => data,
+    (data) => {
+      persistReaderResult(data);
+      renderReaderResult(data);
+    },
+    (err) => renderInlineError("reader-result", err),
+  );
+}

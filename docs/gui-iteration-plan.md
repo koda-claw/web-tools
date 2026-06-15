@@ -342,6 +342,61 @@ POST /api/test/reader
 - Playwright：切换 reader auto 后 provider chain 更新。
 - 视觉检查：desktop/mobile 截图无明显重叠。
 
+#### Task 7.1: Test Result Rendering / 快捷 Reader / 刷新恢复
+
+目标：让 GUI 的 Search Test / Reader Test 从 raw JSON 调试输出升级为可操作结果视图，并形成 `search -> read` 的闭环。
+
+**实现**
+
+- Search Test 成功后，在 Search Test 卡片内渲染结果列表：
+  - rank。
+  - title。
+  - URL。
+  - snippet。
+  - source / engine / provider。
+  - 每条结果提供快捷 `Read` 按钮。
+- 点击搜索结果的 `Read`：
+  - 自动填充 Reader Test 的 URL。
+  - 保持当前 Reader provider。
+  - 自动触发 Reader Test。
+  - Reader 结果在 Reader Test 卡片内渲染。
+- Reader Test 成功后，在 Reader Test 卡片内渲染：
+  - title。
+  - source URL。
+  - word count。
+  - content type。
+  - extract mode。
+  - content preview。
+  - copy content。
+- Output / Diagnostics 继续保留 raw JSON 或错误信息，作为排障入口。
+- 暂不引入 Modal。完整内容查看、Raw JSON Modal、历史记录等后续单独迭代。
+
+**刷新恢复策略**
+
+- 使用 `localStorage` 恢复非敏感 UI 状态：
+  - language。
+  - search query / provider。
+  - reader URL / provider。
+  - 最近一次 search 结果摘要。
+  - 最近一次 reader 结果元数据和正文预览。
+- 不恢复、不保存：
+  - env token value。
+  - provider auth secret。
+  - 完整 raw JSON。
+  - 完整 reader content。
+- 提供 `Clear State` 操作，用于清除 GUI 本地保存的测试状态。
+
+**验收标准**
+
+- Search 成功后卡片内显示结果列表。
+- 点击结果 `Read` 后自动触发 Reader Test。
+- Reader 成功后显示标题、source、word count、extract mode、正文预览。
+- Search / Reader 失败时，在对应卡片内显示错误摘要。
+- 刷新页面后恢复测试输入和最近一次非敏感结果预览。
+- Env token 输入刷新后必须为空。
+- 中英文 UI 都覆盖。
+- 桌面/移动端无横向溢出。
+
 ### Milestone 3: GUI 可用性增强
 
 目标：让 GUI 更适合日常排障和 Agent handoff。
