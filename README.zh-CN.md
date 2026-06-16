@@ -28,6 +28,13 @@
 
 CLI 会输出明确的搜索、读取、质量和错误信号。Skill 负责指导 Agent 做来源选择、浏览器 fallback、部分失败处理和来源 URL 保留。
 
+如果本地已经有 CLI，但不确定是否为最新版，Agent 应先执行：
+
+```bash
+web-tools upgrade --check --json
+web-tools upgrade
+```
+
 ![Agent research workflow](assets/images/agent-research-workflow.png)
 
 ## 安装
@@ -79,6 +86,27 @@ web-tools doctor --json
 
 ```bash
 web-tools setup
+```
+
+## 升级
+
+使用内置升级命令同时更新 CLI 和 Agent skill：
+
+```bash
+web-tools upgrade
+web-tools upgrade --check --json
+```
+
+`upgrade` 会解析目标 release，下载当前平台对应的单文件 binary，校验
+`checksums.txt`，替换指定 CLI 路径，并安装同版本的 `web-tools` skill。它不会修改
+`config.json`、env file 或 cache 目录。
+
+常用变体：
+
+```bash
+web-tools upgrade --version v1.6.0
+web-tools upgrade --bin-dir "$HOME/.local/bin"
+web-tools upgrade --only-skill
 ```
 
 ## 快速使用
@@ -192,6 +220,7 @@ Agent 和脚本默认仍然应该使用非交互 CLI：
 ```bash
 web-tools setup --check --json
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
+web-tools upgrade --check --json
 web-tools skill install --force
 ```
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -278,6 +280,58 @@ func TestCLIIntegrationConfigProviderAndSkillInstall(t *testing.T) {
 	assert.Contains(t, string(setupConfigData), `"bigmodel"`)
 }
 
+func TestCLIIntegrationUpgradeCheckAndFakeRelease(t *testing.T) {
+	bin := buildCLITestBinary(t)
+	newBin := buildVersionedCLITestBinary(t, "v9.9.9")
+	asset := cliTestAssetName(t)
+	server := fakeCLIReleaseServer(t, asset, newBin, false)
+	defer server.Close()
+
+	dir := t.TempDir()
+	targetBin := filepath.Join(dir, "web-tools")
+	if runtime.GOOS == "windows" {
+		targetBin += ".exe"
+	}
+	require.NoError(t, copyFile(targetBin, bin, 0755))
+	before := fileHashForCLI(t, targetBin)
+	skillSource := filepath.Join(t.TempDir(), "SKILL.md")
+	require.NoError(t, os.WriteFile(skillSource, []byte("---\nname: web-tools\ndescription: cli upgrade\n---\n"), 0644))
+	skillDir := filepath.Join(dir, "skills")
+
+	checkStdout, checkStderr := runCLI(t, bin, []string{
+		"upgrade",
+		"--check",
+		"--json",
+		"--version", "v9.9.9",
+		"--base-url", server.URL,
+		"--bin", targetBin,
+		"--skill-dir", skillDir,
+		"--skill-source", skillSource,
+	}, nil)
+	assert.Empty(t, checkStderr)
+	assert.Contains(t, checkStdout, `"target_version": "v9.9.9"`)
+	assert.Equal(t, before, fileHashForCLI(t, targetBin))
+	require.NoFileExists(t, filepath.Join(skillDir, "web-tools", "SKILL.md"))
+
+	upgradeStdout, upgradeStderr := runCLI(t, bin, []string{
+		"upgrade",
+		"--json",
+		"--version", "v9.9.9",
+		"--base-url", server.URL,
+		"--bin", targetBin,
+		"--skill-dir", skillDir,
+		"--skill-source", skillSource,
+	}, nil)
+	assert.Empty(t, upgradeStderr)
+	assert.Contains(t, upgradeStdout, `"cli_updated": true`)
+	assert.Contains(t, upgradeStdout, `"skill_updated": true`)
+
+	versionOut, err := exec.Command(targetBin, "--version").CombinedOutput()
+	require.NoError(t, err)
+	assert.Contains(t, string(versionOut), "v9.9.9")
+	require.FileExists(t, filepath.Join(skillDir, "web-tools", "SKILL.md"))
+}
+
 func buildCLITestBinary(t *testing.T) string {
 	t.Helper()
 
@@ -287,6 +341,20 @@ func buildCLITestBinary(t *testing.T) string {
 	}
 
 	cmd := exec.Command("go", "build", "-o", bin, ".")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	return bin
+}
+
+func buildVersionedCLITestBinary(t *testing.T, version string) string {
+	t.Helper()
+
+	bin := filepath.Join(t.TempDir(), "web-tools")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+
+	cmd := exec.Command("go", "build", "-ldflags", "-X main.version="+version, "-o", bin, ".")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, string(out))
 	return bin
@@ -318,6 +386,68 @@ func writeCLITestConfig(t *testing.T, searxngURL string, searchOverrides map[str
 	path := filepath.Join(t.TempDir(), "web-tools.json")
 	require.NoError(t, os.WriteFile(path, data, 0644))
 	return path
+}
+
+func cliTestAssetName(t *testing.T) string {
+	t.Helper()
+	switch runtime.GOOS + "/" + runtime.GOARCH {
+	case "darwin/arm64":
+		return "web-tools-darwin-arm64"
+	case "darwin/amd64":
+		return "web-tools-darwin-amd64"
+	case "linux/amd64":
+		return "web-tools-linux-amd64"
+	case "linux/arm64":
+		return "web-tools-linux-arm64"
+	case "linux/arm":
+		return "web-tools-linux-arm"
+	case "windows/amd64":
+		return "web-tools-windows-amd64.exe"
+	case "windows/arm64":
+		return "web-tools-windows-arm64.exe"
+	case "freebsd/amd64":
+		return "web-tools-freebsd-amd64"
+	default:
+		t.Fatalf("unsupported test platform: %s/%s", runtime.GOOS, runtime.GOARCH)
+		return ""
+	}
+}
+
+func fakeCLIReleaseServer(t *testing.T, asset string, binPath string, badChecksum bool) *httptest.Server {
+	t.Helper()
+	data, err := os.ReadFile(binPath)
+	require.NoError(t, err)
+	hashBytes := sha256.Sum256(data)
+	hash := hex.EncodeToString(hashBytes[:])
+	if badChecksum {
+		hash = strings.Repeat("0", 64)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v9.9.9/" + asset:
+			_, _ = w.Write(data)
+		case "/v9.9.9/checksums.txt":
+			fmt.Fprintf(w, "%s  %s\n", hash, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func copyFile(dst string, src string, mode os.FileMode) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, mode)
+}
+
+func fileHashForCLI(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func runCLI(t *testing.T, bin string, args []string, env map[string]string) (string, string) {

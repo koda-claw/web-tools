@@ -27,8 +27,9 @@ func buildAgentGuide(version string, status setupcheck.Report) AgentGuide {
 	guide := AgentGuide{
 		RepositoryURL: repositoryURL,
 		InstallCLI: []string{
+			"web-tools upgrade",
 			fmt.Sprintf("go install github.com/koda-claw/web-tools@%s", ref),
-			fmt.Sprintf("curl -L https://github.com/koda-claw/web-tools/releases/download/%s/web-tools_Darwin_arm64.tar.gz", versionOrPlaceholder(version)),
+			fmt.Sprintf("curl -L https://github.com/koda-claw/web-tools/releases/download/%s/web-tools-darwin-arm64 -o web-tools", versionOrPlaceholder(version)),
 		},
 		InstallSkill: []string{
 			"web-tools skill install --force",

@@ -127,6 +127,9 @@ func TestDiagnosticsContainsGuideAndNoSecret(t *testing.T) {
 
 	assert.Contains(t, body, `"repository_url"`)
 	assert.Contains(t, body, `"agent_guide"`)
+	assert.Contains(t, body, "web-tools upgrade")
+	assert.NotContains(t, body, ".tar.gz")
+	assert.NotContains(t, body, "web-tools_Darwin")
 	assert.NotContains(t, body, "super-secret-token")
 }
 

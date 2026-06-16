@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.6.0 - 2026-06-16
+
+Feature release for self-upgrade and Agent installation closure.
 
 ### Added
 
@@ -11,11 +13,15 @@
 - User env file auto-loading from `~/.config/web-tools/.env`, with `WEB_TOOLS_ENV` override support.
 - `web-tools setup --set-env KEY=value` with `--env-file` and `--force-env` for non-interactive env file setup.
 - `doctor` env file diagnostics without exposing secret values.
+- `web-tools upgrade` for release-based CLI upgrades plus same-version Agent skill installation.
+- Release `checksums.txt` generation for upgrade SHA256 verification.
+- Upgrade smoke coverage through `scripts/upgrade_smoke.sh`.
 
 ### Security
 
 - GUI and setup diagnostics expose `auth_env` and configured booleans only; token values are never returned.
 - GUI binds to `127.0.0.1` by default.
+- `web-tools upgrade` verifies SHA256 checksums by default and preserves the existing binary on checksum or version mismatch.
 
 ## v1.4.1 - 2026-06-15
 

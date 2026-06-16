@@ -9,6 +9,7 @@ import (
 	guicmd "github.com/koda-claw/web-tools/cmd/gui"
 	setupcmd "github.com/koda-claw/web-tools/cmd/setup"
 	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
+	upgradecmd "github.com/koda-claw/web-tools/cmd/upgrade"
 	"github.com/koda-claw/web-tools/cmd/web-reader"
 	"github.com/koda-claw/web-tools/cmd/web-search"
 	"github.com/spf13/cobra"
@@ -30,10 +31,11 @@ Zero cost. No API keys. No third-party dependencies.`,
   web-tools web-reader https://example.com/spa-page --browser
   web-tools web-reader ./report.pdf
   web-tools web-reader ./slides.pptx -o /tmp/slides.md
-  web-tools config provider add bigmodel --preset bigmodel
-  web-tools skill install
-  web-tools setup --provider bigmodel
-  web-tools doctor --json`,
+	  web-tools config provider add bigmodel --preset bigmodel
+	  web-tools skill install
+	  web-tools setup --provider bigmodel
+	  web-tools upgrade --check --json
+	  web-tools doctor --json`,
 		Version: version,
 	}
 
@@ -42,6 +44,7 @@ Zero cost. No API keys. No third-party dependencies.`,
 	rootCmd.AddCommand(guicmd.Cmd(version))
 	rootCmd.AddCommand(setupcmd.Cmd(version))
 	rootCmd.AddCommand(skillcmd.Cmd(version))
+	rootCmd.AddCommand(upgradecmd.Cmd(version))
 	rootCmd.AddCommand(webreader.Cmd())
 	rootCmd.AddCommand(websearch.Cmd())
 

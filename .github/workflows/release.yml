@@ -36,6 +36,18 @@ jobs:
           GOOS=windows GOARCH=arm64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-windows-arm64.exe .
           GOOS=freebsd GOARCH=amd64  go build -ldflags "-X main.version=$TAG" -o dist/web-tools-freebsd-amd64 .
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          rm -f checksums.txt
+          for f in web-tools-*; do
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$f"
+            else
+              shasum -a 256 "$f"
+            fi
+          done > checksums.txt
+
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:

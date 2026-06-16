@@ -5,7 +5,7 @@ SKILL_DIR ?= $(HOME)/.codex/skills
 GUI_PORT ?= 0
 GUI_HOST ?= 127.0.0.1
 
-.PHONY: help test vet smoke check build gui install-local install-skill setup-check clean
+.PHONY: help test vet smoke upgrade-smoke check build gui install-local install-skill setup-check clean
 
 help:
 	@echo "web-tools local targets"
@@ -13,7 +13,8 @@ help:
 	@echo "  make test          Run Go tests"
 	@echo "  make vet           Run go vet"
 	@echo "  make smoke         Run end-to-end smoke script"
-	@echo "  make check         Run test, vet, and smoke"
+	@echo "  make upgrade-smoke Run upgrade-specific smoke script"
+	@echo "  make check         Run test, vet, smoke, and upgrade smoke"
 	@echo "  make build         Build ./web-tools"
 	@echo "  make gui           Start local GUI on $(GUI_HOST):$(GUI_PORT)"
 	@echo "  make install-local Install CLI and skill to BIN_DIR/SKILL_DIR"
@@ -30,7 +31,10 @@ vet:
 smoke:
 	@./scripts/smoke.sh
 
-check: test vet smoke
+upgrade-smoke:
+	@./scripts/upgrade_smoke.sh
+
+check: test vet smoke upgrade-smoke
 
 build:
 	@go build -o web-tools .

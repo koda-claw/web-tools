@@ -36,6 +36,23 @@ web-tools doctor --json
 web-tools setup --check --json
 ```
 
+If `web-tools` is already installed, check whether it can be upgraded before
+starting research work:
+
+```bash
+web-tools upgrade --check --json
+web-tools upgrade
+```
+
+`web-tools upgrade` updates the CLI and installs the matching `web-tools` skill
+from the same release tag. It verifies release checksums and does not modify
+`config.json`, env files, or cache directories. If the binary is installed in a
+non-standard location, use:
+
+```bash
+web-tools upgrade --bin-dir "$HOME/.local/bin"
+```
+
 If the CLI binary is installed but this skill is missing or stale, install it
 from the CLI:
 

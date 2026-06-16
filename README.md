@@ -30,6 +30,13 @@ The CLI provides explicit search, read, quality, and error signals. The skill
 guides the agent on source selection, browser fallback, partial failures, and
 preserving source URLs.
 
+If the CLI is already installed but may be stale, agents should first run:
+
+```bash
+web-tools upgrade --check --json
+web-tools upgrade
+```
+
 ![Agent research workflow](assets/images/agent-research-workflow.png)
 
 ## Install
@@ -81,6 +88,28 @@ If you installed only the CLI binary, initialize the Agent skill from the CLI:
 
 ```bash
 web-tools setup
+```
+
+## Upgrade
+
+Use the built-in upgrade command to update the CLI and Agent skill together:
+
+```bash
+web-tools upgrade
+web-tools upgrade --check --json
+```
+
+`upgrade` resolves the target release, downloads the matching single-file binary
+for the current platform, verifies `checksums.txt`, replaces the configured CLI
+path, and installs the matching `web-tools` skill. It does not modify
+`config.json`, env files, or cache directories.
+
+Useful variants:
+
+```bash
+web-tools upgrade --version v1.6.0
+web-tools upgrade --bin-dir "$HOME/.local/bin"
+web-tools upgrade --only-skill
 ```
 
 ## Quick start
@@ -191,6 +220,7 @@ For agents and scripts, prefer the non-interactive CLI:
 ```bash
 web-tools setup --check --json
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --set-env ZHIPU_APIKEY=...
+web-tools upgrade --check --json
 web-tools skill install --force
 ```
 

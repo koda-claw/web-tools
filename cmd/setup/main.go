@@ -1,6 +1,7 @@
 package setupcmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,10 +9,10 @@ import (
 
 	configcmd "github.com/koda-claw/web-tools/cmd/config"
 	"github.com/koda-claw/web-tools/cmd/doctor"
-	skillcmd "github.com/koda-claw/web-tools/cmd/skill"
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
 	"github.com/koda-claw/web-tools/internal/setupcheck"
+	"github.com/koda-claw/web-tools/internal/skillinstall"
 	"github.com/spf13/cobra"
 )
 
@@ -129,9 +130,17 @@ func Run(opts Options) error {
 
 	if opts.InstallSkill {
 		fmt.Fprintln(os.Stdout, "\n[1/3] Installing Agent skill")
-		if err := skillcmd.InstallSkill(opts.Version, opts.SkillDir, opts.SkillSource, opts.ForceSkill, false); err != nil {
+		result, err := skillinstall.Install(context.Background(), skillinstall.Options{
+			Version: opts.Version,
+			Dir:     opts.SkillDir,
+			Source:  opts.SkillSource,
+			Force:   opts.ForceSkill,
+		})
+		if err != nil {
 			return err
 		}
+		fmt.Fprintf(os.Stdout, "Installed web-tools skill to %s\n", result.SkillPath)
+		fmt.Fprintf(os.Stdout, "Source: %s\n", result.Source)
 	} else {
 		fmt.Fprintln(os.Stdout, "\n[1/3] Skipping Agent skill install")
 	}
