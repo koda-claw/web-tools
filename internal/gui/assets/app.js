@@ -1,14 +1,18 @@
 const $ = (id) => document.getElementById(id);
 const UI_STATE_KEY = "web-tools-gui-state-v1";
 const THEME_KEY = "web-tools-theme";
+const METRICS_RANGE_KEY = "web-tools-metrics-range";
 
 const state = {
   status: null,
   guide: null,
+  metrics: null,
+  metricsRange: localStorage.getItem(METRICS_RANGE_KEY) || "24h",
   lang: detectLanguage(),
   theme: detectTheme(),
   searchResult: null,
   readerResult: null,
+  charts: {},
 };
 
 const messages = {
@@ -41,6 +45,19 @@ const messages = {
     copy: "Copy",
     copied: "Copied",
     diagnostics: "Diagnostics",
+    metricsDashboard: "Metrics Dashboard",
+    metricsRange: "Range",
+    resetMetrics: "Reset Metrics",
+    resetMetricsConfirm: "Reset local metrics?",
+    commandsChart: "Commands",
+    providersChart: "Providers",
+    readerQualityChart: "Reader Quality",
+    durationChart: "Recent Duration",
+    total: "Total",
+    success: "Success",
+    error: "Error",
+    avgDuration: "Avg duration",
+    fallback: "Fallback",
     exportJson: "Export JSON",
     clearState: "Clear State",
     read: "Read",
@@ -105,6 +122,19 @@ const messages = {
     copy: "复制",
     copied: "已复制",
     diagnostics: "诊断",
+    metricsDashboard: "指标看板",
+    metricsRange: "时间范围",
+    resetMetrics: "重置指标",
+    resetMetricsConfirm: "确定重置本地指标？",
+    commandsChart: "命令",
+    providersChart: "Provider",
+    readerQualityChart: "读取质量",
+    durationChart: "最近耗时",
+    total: "总数",
+    success: "成功",
+    error: "失败",
+    avgDuration: "平均耗时",
+    fallback: "Fallback",
     exportJson: "导出 JSON",
     clearState: "清空状态",
     read: "读取",
@@ -167,6 +197,7 @@ function applyTheme() {
   document.documentElement.dataset.theme = resolvedTheme();
   const selector = $("theme-select");
   if (selector) selector.value = state.theme;
+  renderMetrics();
 }
 
 function applyLanguage() {
@@ -176,8 +207,10 @@ function applyLanguage() {
     el.textContent = t(el.dataset.i18n);
   });
   $("refresh").title = t("refresh");
+  $("reset-metrics").textContent = t("resetMetrics");
   const selector = $("language-select");
   selector.value = state.lang;
+  renderMetrics();
 }
 
 function loadUIState() {
@@ -243,12 +276,23 @@ async function api(path, options = {}) {
 }
 
 async function refresh() {
-  const [status, guide] = await Promise.all([api("/api/status"), api("/api/agent-guide")]);
+  const [status, guide, metricsData] = await Promise.all([
+    api("/api/status"),
+    api("/api/agent-guide"),
+    loadMetrics(),
+  ]);
   state.status = status;
   state.guide = guide.guide;
+  state.metrics = metricsData.metrics;
   renderStatus(status);
   renderGuide(guide.guide);
   updateReaderProviderOptions(status.setup);
+  renderMetrics();
+}
+
+async function loadMetrics() {
+  const range = encodeURIComponent(state.metricsRange || "24h");
+  return api(`/api/metrics?range=${range}&bucket=auto`);
 }
 
 function renderStatus(data) {
@@ -450,6 +494,162 @@ function renderPersistedResults() {
   }
 }
 
+function renderMetrics() {
+  const snap = state.metrics;
+  syncMetricsRangeControl();
+  const cards = $("metric-cards");
+  if (!cards) return;
+  const commands = snap && snap.commands ? snap.commands : {};
+  const providers = snap && snap.providers ? snap.providers : {};
+  const errors = snap && snap.errors ? snap.errors : {};
+  const quality = snap && snap.reader_quality ? snap.reader_quality : {};
+  const total = sumCounters(commands, "total");
+  const success = sumCounters(commands, "success");
+  const error = sumCounters(commands, "error");
+  const avg = averageDuration(commands);
+  cards.innerHTML = [
+    metricCard(t("total"), total),
+    metricCard(t("success"), success),
+    metricCard(t("error"), error),
+    metricCard(t("avgDuration"), `${avg}ms`),
+    metricCard(t("fallback"), quality.fallback_recommended || 0),
+  ].join("");
+
+  drawBarChart("commands-chart", Object.entries(commands).map(([name, c]) => ({
+    name,
+    success: c.success || 0,
+    error: c.error || 0,
+  })));
+  drawBarChart("providers-chart", Object.entries(providers).map(([name, c]) => ({
+    name,
+    success: c.success || 0,
+    error: c.error || 0,
+  })));
+  drawDonutChart("quality-chart", [
+    { name: "high", value: quality.high || 0 },
+    { name: "medium", value: quality.medium || 0 },
+    { name: "low", value: quality.low || 0 },
+  ]);
+  drawLineChart("duration-chart", (snap && snap.recent_events ? snap.recent_events : []).map((event, index) => ({
+    name: event.command || String(index + 1),
+    value: event.duration_ms || 0,
+  })));
+  $("output").dataset.metricsErrors = Object.keys(errors).join(",");
+}
+
+function syncMetricsRangeControl() {
+  const selected = state.metricsRange || "24h";
+  document.querySelectorAll('input[name="metrics_range"]').forEach((input) => {
+    input.checked = input.value === selected;
+    input.closest("label")?.classList.toggle("active", input.checked);
+  });
+}
+
+function metricCard(label, value) {
+  return `<div class="metric-card"><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div>`;
+}
+
+function sumCounters(counters, field) {
+  return Object.values(counters || {}).reduce((sum, item) => sum + Number(item[field] || 0), 0);
+}
+
+function averageDuration(counters) {
+  let total = 0;
+  let duration = 0;
+  Object.values(counters || {}).forEach((item) => {
+    total += Number(item.total || 0);
+    duration += Number(item.total_duration_ms || 0);
+  });
+  return total ? Math.round(duration / total) : 0;
+}
+
+function chartPalette() {
+  return resolvedTheme() === "dark"
+    ? ["#58c58b", "#ff7b72", "#73d0d8", "#d89b3d"]
+    : ["#197447", "#b42318", "#0b6670", "#9b5800"];
+}
+
+function drawBarChart(id, rows) {
+  const el = $(id);
+  if (!el) return;
+  const labels = rows.map((row) => row.name);
+  const colors = chartPalette();
+  if (window.echarts) {
+    const chart = state.charts[id] || window.echarts.init(el);
+    state.charts[id] = chart;
+    chart.setOption({
+      color: colors,
+      tooltip: { trigger: "axis" },
+      legend: { textStyle: { color: "var(--muted)" } },
+      grid: { left: 36, right: 12, top: 28, bottom: 36 },
+      xAxis: { type: "category", data: labels, axisLabel: { color: getCSSVar("--muted"), interval: 0, rotate: labels.length > 3 ? 20 : 0 } },
+      yAxis: { type: "value", axisLabel: { color: getCSSVar("--muted") }, splitLine: { lineStyle: { color: getCSSVar("--line") } } },
+      series: [
+        { name: t("success"), type: "bar", stack: "total", data: rows.map((row) => row.success) },
+        { name: t("error"), type: "bar", stack: "total", data: rows.map((row) => row.error) },
+      ],
+    });
+    return;
+  }
+  fallbackBars(el, rows);
+}
+
+function drawDonutChart(id, rows) {
+  const el = $(id);
+  if (!el) return;
+  const colors = chartPalette();
+  if (window.echarts) {
+    const chart = state.charts[id] || window.echarts.init(el);
+    state.charts[id] = chart;
+    chart.setOption({
+      color: colors,
+      tooltip: { trigger: "item" },
+      legend: { bottom: 0, textStyle: { color: getCSSVar("--muted") } },
+      series: [{ type: "pie", radius: ["46%", "70%"], center: ["50%", "42%"], data: rows }],
+    });
+    return;
+  }
+  fallbackBars(el, rows.map((row) => ({ name: row.name, success: row.value, error: 0 })));
+}
+
+function drawLineChart(id, rows) {
+  const el = $(id);
+  if (!el) return;
+  if (window.echarts) {
+    const chart = state.charts[id] || window.echarts.init(el);
+    state.charts[id] = chart;
+    chart.setOption({
+      color: chartPalette(),
+      tooltip: { trigger: "axis" },
+      grid: { left: 36, right: 12, top: 20, bottom: 36 },
+      xAxis: { type: "category", data: rows.map((row, index) => `${index + 1}`), axisLabel: { color: getCSSVar("--muted") } },
+      yAxis: { type: "value", axisLabel: { color: getCSSVar("--muted") }, splitLine: { lineStyle: { color: getCSSVar("--line") } } },
+      series: [{ name: "ms", type: "line", smooth: true, data: rows.map((row) => row.value), areaStyle: {} }],
+    });
+    return;
+  }
+  fallbackBars(el, rows.map((row) => ({ name: row.name, success: row.value, error: 0 })));
+}
+
+function fallbackBars(el, rows) {
+  const max = Math.max(1, ...rows.map((row) => Number(row.success || row.value || 0) + Number(row.error || 0)));
+  el.innerHTML = `<div class="fallback-chart">${rows.length ? rows.map((row) => {
+    const ok = Number(row.success || row.value || 0);
+    const err = Number(row.error || 0);
+    return `<div class="fallback-row">
+      <span>${escapeHTML(row.name)}</span>
+      <div class="fallback-track">
+        <i style="width:${Math.round((ok / max) * 100)}%"></i>
+        <b style="width:${Math.round((err / max) * 100)}%"></b>
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty-state">${escapeHTML(t("noResults"))}</div>`}</div>`;
+}
+
+function getCSSVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 function persistSearchResult(data) {
   const result = data.result || data;
   state.searchResult = {
@@ -626,6 +826,9 @@ $("theme-select").addEventListener("change", (event) => {
   localStorage.setItem(THEME_KEY, state.theme);
   applyTheme();
 });
+window.addEventListener("resize", () => {
+  Object.values(state.charts).forEach((chart) => chart && chart.resize && chart.resize());
+});
 if (window.matchMedia) {
   const colorSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
   const onColorSchemeChange = () => {
@@ -681,6 +884,31 @@ $("download-diagnostics").addEventListener("click", async () => {
   a.download = "web-tools-diagnostics.json";
   a.click();
   URL.revokeObjectURL(url);
+});
+$("metrics-range").addEventListener("change", async (event) => {
+  const input = event.target.closest('input[name="metrics_range"]');
+  if (!input) return;
+  state.metricsRange = input.value || "24h";
+  localStorage.setItem(METRICS_RANGE_KEY, state.metricsRange);
+  syncMetricsRangeControl();
+  try {
+    const data = await loadMetrics();
+    state.metrics = data.metrics;
+    renderMetrics();
+  } catch (err) {
+    $("output").textContent = err.message;
+  }
+});
+$("reset-metrics").addEventListener("click", async () => {
+  if (!window.confirm(t("resetMetricsConfirm"))) return;
+  try {
+    await api("/api/metrics/reset", { method: "POST", body: "{}" });
+    const data = await loadMetrics();
+    state.metrics = data.metrics;
+    renderMetrics();
+  } catch (err) {
+    $("output").textContent = err.message;
+  }
 });
 
 applyTheme();

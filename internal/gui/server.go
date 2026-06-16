@@ -16,6 +16,7 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/koda-claw/web-tools/internal/provider"
 	mcpprovider "github.com/koda-claw/web-tools/internal/provider/mcp"
 	"github.com/koda-claw/web-tools/internal/reader"
@@ -118,6 +119,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/env", s.handleEnv)
 	mux.HandleFunc("POST /api/test/search", s.handleTestSearch)
 	mux.HandleFunc("POST /api/test/reader", s.handleTestReader)
+	mux.HandleFunc("GET /api/metrics", s.handleMetrics)
+	mux.HandleFunc("POST /api/metrics/reset", s.handleMetricsReset)
 	mux.HandleFunc("GET /api/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("GET /api/agent-guide", s.handleAgentGuide)
 
@@ -251,12 +254,20 @@ type searchTestRequest struct {
 }
 
 func (s *Server) handleTestSearch(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	var metric metrics.Event
+	var recordErr error
+	defer func() {
+		metrics.ObserveCommand(start, "gui-test-search", metric, recordErr)
+	}()
+
 	var req searchTestRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.Query) == "" {
-		writeError(w, apperrors.NewInputError("missing query", "query cannot be empty", []string{"enter a search query"}))
+		recordErr = apperrors.NewInputError("missing query", "query cannot be empty", []string{"enter a search query"})
+		writeError(w, recordErr)
 		return
 	}
 	if req.Limit <= 0 || req.Limit > 10 {
@@ -264,7 +275,8 @@ func (s *Server) handleTestSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		writeError(w, apperrors.NewInputError("cannot load configuration", err.Error(), []string{"check config file format"}))
+		recordErr = apperrors.NewInputError("cannot load configuration", err.Error(), []string{"check config file format"})
+		writeError(w, recordErr)
 		return
 	}
 	opts := search.SearchOptions{Limit: req.Limit}
@@ -284,12 +296,16 @@ func (s *Server) handleTestSearch(w http.ResponseWriter, r *http.Request) {
 	}()
 	select {
 	case <-ctx.Done():
-		writeError(w, apperrors.NewNetworkError("search test timed out", ctx.Err().Error(), nil, []string{"try a smaller timeout or provider=auto"}))
+		recordErr = apperrors.NewNetworkError("search test timed out", ctx.Err().Error(), nil, []string{"try a smaller timeout or provider=auto"})
+		writeError(w, recordErr)
 	case res := <-ch:
 		if res.err != nil {
-			writeError(w, res.err)
+			recordErr = res.err
+			writeError(w, recordErr)
 			return
 		}
+		metric.Provider = firstNonEmpty(res.resp.Provider, res.resp.Engine, opts.Provider, opts.Engine)
+		metric.ResultCount = res.resp.Total
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res.resp})
 	}
 }
@@ -301,22 +317,32 @@ type readerTestRequest struct {
 }
 
 func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	var metric metrics.Event
+	var recordErr error
+	defer func() {
+		metrics.ObserveCommand(start, "gui-test-reader", metric, recordErr)
+	}()
+
 	var req readerTestRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if strings.TrimSpace(req.URL) == "" {
-		writeError(w, apperrors.NewInputError("missing url", "url cannot be empty", []string{"enter an http:// or https:// URL"}))
+		recordErr = apperrors.NewInputError("missing url", "url cannot be empty", []string{"enter an http:// or https:// URL"})
+		writeError(w, recordErr)
 		return
 	}
 	input, err := reader.ParseInput(req.URL)
 	if err != nil || input == nil || input.Type != reader.InputURL {
-		writeError(w, apperrors.NewInputError("invalid reader URL", "reader test only accepts http:// or https:// URLs", []string{"use a web URL"}))
+		recordErr = apperrors.NewInputError("invalid reader URL", "reader test only accepts http:// or https:// URLs", []string{"use a web URL"})
+		writeError(w, recordErr)
 		return
 	}
 	cfg, err := config.Load()
 	if err != nil {
-		writeError(w, apperrors.NewInputError("cannot load configuration", err.Error(), []string{"check config file format"}))
+		recordErr = apperrors.NewInputError("cannot load configuration", err.Error(), []string{"check config file format"})
+		writeError(w, recordErr)
 		return
 	}
 	if req.TimeoutMS > 0 {
@@ -331,27 +357,36 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 	}
 	selected, err := selectGUIReaderProvider(*cfg, providerID)
 	if err != nil {
-		writeError(w, err)
+		recordErr = err
+		writeError(w, recordErr)
 		return
 	}
+	metric.Provider = selected.ID
 
 	if selected.ID != "builtin-reader" {
-		s.handleProviderReaderTest(w, input, *cfg, selected)
+		s.handleProviderReaderTest(w, input, *cfg, selected, &metric, &recordErr)
 		return
 	}
 
 	fetcher := reader.NewFetcher(cfg.Reader)
 	fetchResult, err := fetcher.Fetch(input.URL.String())
 	if err != nil {
-		writeError(w, err)
+		recordErr = err
+		writeError(w, recordErr)
 		return
 	}
 	defer fetchResult.Body.Close()
 	extracted, err := reader.NewExtractor(cfg.Reader).Extract(fetchResult.Body, input.URL)
 	if err != nil {
-		writeError(w, err)
+		recordErr = err
+		writeError(w, recordErr)
 		return
 	}
+	wordCount := len(strings.Fields(extracted.TextContent))
+	quality := guiQuality(wordCount, cfg.Reader.MinContentLength)
+	metric.WordCountBucket = metrics.WordCountBucket(wordCount)
+	metric.Quality = quality.Score
+	metric.FallbackRecommended = quality.NeedsFallback
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true,
 		"result": map[string]any{
@@ -360,11 +395,12 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 			"title":        extracted.Title,
 			"content":      extracted.Content,
 			"text_content": extracted.TextContent,
-			"word_count":   len(strings.Fields(extracted.TextContent)),
+			"word_count":   wordCount,
 			"content_type": reader.GuessContentType(input.URL.String(), extracted.SiteName, extracted.Metadata),
 			"extract_mode": "readability",
 			"fetched_at":   time.Now(),
 			"provider":     selected.ID,
+			"quality":      quality,
 		},
 	})
 }
@@ -408,14 +444,20 @@ func selectGUIReaderProvider(cfg config.Config, requested string) (provider.Prov
 	}
 }
 
-func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.Input, cfg config.Config, selected provider.Provider) {
+func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.Input, cfg config.Config, selected provider.Provider, metric *metrics.Event, recordErr *error) {
 	client := mcpprovider.NewClient(selected.Config, os.Getenv(selected.Config.AuthEnv))
 	result, err := client.Read(context.Background(), input.URL.String())
 	if err != nil {
+		*recordErr = err
 		writeError(w, err)
 		return
 	}
 	content := result.Content
+	wordCount := len(strings.Fields(content))
+	quality := guiQuality(wordCount, cfg.Reader.MinContentLength)
+	metric.WordCountBucket = metrics.WordCountBucket(wordCount)
+	metric.Quality = quality.Score
+	metric.FallbackRecommended = quality.NeedsFallback
 	metadata := result.Metadata
 	if metadata == nil {
 		metadata = map[string]string{}
@@ -434,28 +476,103 @@ func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.I
 			"title":        title,
 			"content":      content,
 			"text_content": content,
-			"word_count":   len(strings.Fields(content)),
+			"word_count":   wordCount,
 			"content_type": reader.GuessContentType(input.URL.String(), "", metadata),
 			"extract_mode": "provider:" + selected.ID,
 			"fetched_at":   time.Now(),
 			"provider":     selected.ID,
 			"metadata":     metadata,
-			"quality": map[string]any{
-				"word_count": len(strings.Fields(content)),
-				"min_words":  cfg.Reader.MinContentLength,
-			},
+			"quality":      quality,
 		},
 	})
 }
 
+type guiQualityInfo struct {
+	Score         string `json:"score"`
+	WordCount     int    `json:"word_count"`
+	MinWords      int    `json:"min_words"`
+	NeedsFallback bool   `json:"needs_fallback"`
+}
+
+func guiQuality(wordCount int, minWords int) guiQualityInfo {
+	if minWords <= 0 {
+		minWords = config.DefaultMinContentLength
+	}
+	score := "high"
+	needsFallback := false
+	if wordCount == 0 {
+		score = "low"
+		needsFallback = true
+	} else if wordCount < minWords {
+		score = "low"
+		needsFallback = true
+	}
+	return guiQualityInfo{Score: score, WordCount: wordCount, MinWords: minWords, NeedsFallback: needsFallback}
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	rawRange := r.URL.Query().Get("range")
+	rawBucket := r.URL.Query().Get("bucket")
+	if rawRange == "" {
+		rawRange = "all"
+	}
+	if rawBucket == "" {
+		rawBucket = "auto"
+	}
+	selectedRange, err := metrics.ParseRange(rawRange)
+	if err != nil {
+		writeError(w, apperrors.NewInputError("invalid metrics range", err.Error(), []string{"use range=1h,24h,7d,30d,all"}))
+		return
+	}
+	selectedBucket, err := metrics.ParseBucket(rawBucket)
+	if err != nil {
+		writeError(w, apperrors.NewInputError("invalid metrics bucket", err.Error(), []string{"use bucket=auto,hour,day"}))
+		return
+	}
+	snap, err := metrics.NewStore("").Snapshot(selectedRange, selectedBucket)
+	if err != nil {
+		writeError(w, apperrors.NewInputError("cannot load metrics", err.Error(), []string{"check metrics file permissions"}))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"range":   selectedRange,
+		"bucket":  selectedBucket,
+		"metrics": snap,
+	})
+}
+
+func (s *Server) handleMetricsReset(w http.ResponseWriter, r *http.Request) {
+	if err := metrics.NewStore("").Reset(); err != nil {
+		writeError(w, apperrors.NewInputError("cannot reset metrics", err.Error(), []string{"check metrics file permissions"}))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	status := setupcheck.Run(setupcheck.Options{Version: s.opts.Version, SkillDir: s.opts.SkillDir})
+	snap, err := metrics.NewStore("").Snapshot(metrics.RangeAll, metrics.BucketAuto)
+	metricsSummary := map[string]any{
+		"available": err == nil,
+	}
+	if err == nil {
+		metricsSummary["commands"] = snap.Commands
+		metricsSummary["providers"] = snap.Providers
+		metricsSummary["reader_quality"] = snap.ReaderQuality
+		metricsSummary["errors"] = snap.Errors
+		metricsSummary["period"] = snap.Period
+		metricsSummary["disabled"] = snap.Disabled
+	} else {
+		metricsSummary["error_category"] = "input"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":             status.OK,
 		"version":        s.opts.Version,
 		"repository_url": repositoryURL,
 		"generated_at":   time.Now(),
 		"setup":          status,
+		"metrics":        metricsSummary,
 		"agent_guide":    buildAgentGuide(s.opts.Version, status),
 	})
 }
@@ -516,4 +633,13 @@ func timeoutFromMS(ms int, fallback time.Duration) time.Duration {
 		return 60 * time.Second
 	}
 	return d
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" && strings.TrimSpace(value) != "auto" {
+			return value
+		}
+	}
+	return ""
 }

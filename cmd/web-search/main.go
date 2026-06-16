@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/koda-claw/web-tools/internal/search"
 	"github.com/spf13/cobra"
 )
@@ -57,25 +59,37 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 }
 
 func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagIncludeDomains []string, flagExcludeDomains []string) {
+	start := time.Now()
+	var metric metrics.Event
+	var runErr error
+	defer func() {
+		metrics.ObserveCommand(start, "web-search", metric, runErr)
+	}()
+
 	cfg, err := loadSearchRuntimeConfig()
 	if err != nil {
-		apperrors.HandleError(apperrors.NewInputError(
+		runErr = apperrors.NewInputError(
 			"cannot load configuration",
 			err.Error(),
 			[]string{"check config file format", "check environment variables"},
-		))
+		)
+		apperrors.HandleError(runErr)
 	}
 	s := search.NewSearchWithConfig(*cfg)
 
 	opts, err := buildSearchOptions(cmd, flagLimit, flagEngine, flagProvider, flagLocale, flagCategory, flagTimeRange, flagIncludeDomains, flagExcludeDomains)
 	if err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
 
 	resp, err := s.Do(query, opts)
 	if err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
+	metric.Provider = firstNonEmpty(resp.Provider, resp.Engine, opts.Provider, opts.Engine)
+	metric.ResultCount = resp.Total
 
 	var output string
 	if flagJSON {
@@ -86,15 +100,25 @@ func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, fla
 
 	if flagOutput != "" {
 		if err := os.WriteFile(flagOutput, []byte(output), 0644); err != nil {
-			apperrors.HandleError(apperrors.NewInputError(
+			runErr = apperrors.NewInputError(
 				"cannot write to output file",
 				err.Error(),
 				[]string{"check output path write permissions"},
-			))
+			)
+			apperrors.HandleError(runErr)
 		}
 	} else {
 		fmt.Println(output)
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" && strings.TrimSpace(value) != "auto" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildSearchOptions(cmd *cobra.Command, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagIncludeDomains []string, flagExcludeDomains []string) (search.SearchOptions, error) {

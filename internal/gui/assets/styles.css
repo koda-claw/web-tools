@@ -196,12 +196,199 @@ h2 {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 14px;
+  min-width: 0;
+}
+
+.panel-head h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metrics-actions {
+  display: flex;
+  flex: 1 1 440px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.segmented-control {
+  display: inline-grid;
+  position: relative;
+  grid-template-columns: repeat(5, minmax(46px, 1fr));
+  gap: 2px;
+  min-width: min(100%, 292px);
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px;
+  background: var(--field);
+}
+
+.segmented-control legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.segmented-control label {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.segmented-control input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.segmented-control span {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  min-width: 0;
+  border-radius: 5px;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  overflow-wrap: anywhere;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.segmented-control label:hover span {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.segmented-control input:checked + span {
+  background: var(--accent-strong);
+  color: var(--field);
+}
+
+.segmented-control input:focus-visible + span {
+  box-shadow: var(--ring);
 }
 
 .status-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.metric-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.metric-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.chart-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.chart-title {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chart {
+  width: 100%;
+  min-width: 0;
+  height: 260px;
+}
+
+.fallback-chart {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  min-height: 220px;
+}
+
+.fallback-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 34%) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fallback-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fallback-track {
+  display: flex;
+  min-width: 0;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--field);
+}
+
+.fallback-track i,
+.fallback-track b {
+  display: block;
+  min-width: 0;
+}
+
+.fallback-track i {
+  background: var(--ok);
+}
+
+.fallback-track b {
+  background: var(--error);
 }
 
 .check {
@@ -537,6 +724,7 @@ label {
 input,
 select,
 button {
+  max-width: 100%;
   min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -549,6 +737,13 @@ select {
   width: 100%;
   background: var(--field);
   color: var(--ink);
+}
+
+.segmented-control input {
+  width: 1px;
+  min-height: 1px;
+  border: 0;
+  padding: 0;
 }
 
 select {
@@ -639,8 +834,17 @@ button:disabled {
   }
 
   .grid,
-  .status-grid {
+  .status-grid,
+  .chart-grid {
     grid-template-columns: 1fr;
+  }
+
+  .metric-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chart {
+    height: 240px;
   }
 
   .search-item {
@@ -656,6 +860,16 @@ button:disabled {
     justify-content: flex-start;
   }
 
+  .metrics-actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .segmented-control {
+    flex: 1 1 280px;
+  }
+
   .reader-preview,
   .reader-preview[data-content-size="full"] {
     max-height: 62vh;
@@ -664,5 +878,30 @@ button:disabled {
 
   .span-2 {
     grid-column: span 1;
+  }
+}
+
+@media (max-width: 520px) {
+  .metric-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metrics-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .segmented-control {
+    width: 100%;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  #reset-metrics {
+    width: 100%;
   }
 }

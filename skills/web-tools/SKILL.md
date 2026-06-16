@@ -13,6 +13,7 @@ Local-first web search and reading tools for AI agents. Zero cost by default; no
 - Need to **search the web** for information → `web-search`
 - Need to **read/extract content** from a URL or file → `web-reader`
 - Need to check local setup or optional dependencies → `doctor`
+- Need to inspect local tool health or recent failures → `metrics`
 - User asks "look this up", "find information about", "search for", "read this article/page"
 - Any task that currently uses `mcp__web_search__web_search_prime` or `mcp__web_reader__webReader` should use these CLIs instead
 
@@ -34,6 +35,7 @@ Then verify the runtime:
 web-tools --version
 web-tools doctor --json
 web-tools setup --check --json
+web-tools metrics --json
 ```
 
 If `web-tools` is already installed, check whether it can be upgraded before
@@ -150,6 +152,46 @@ web-tools doctor --json
 ```
 
 `doctor` checks config loading, cache directory access, optional MarkItDown, optional agent-browser, and optional SearXNG reachability. Missing optional dependencies produce warnings rather than hard failures.
+
+---
+
+## metrics
+
+Inspect local, non-sensitive aggregate health metrics.
+
+```bash
+web-tools metrics --json
+web-tools metrics --range 24h --json
+web-tools metrics reset --json
+```
+
+Use metrics when a task is blocked, a provider appears unreliable, or the user
+asks whether web-tools has been working locally. Metrics are not a factual web
+source; they only describe local command execution health.
+
+Safe fields include command status, duration, provider id, result count, reader
+quality, fallback recommendation, and error category. Metrics must not contain
+queries, URLs, titles, content, local file paths, headers, tokens, env values,
+or detailed error strings.
+
+The metrics command does not record itself. To disable metrics collection for a
+command or session:
+
+```bash
+WEB_TOOLS_NO_METRICS=1 web-tools web-search "Go readability library" --json
+```
+
+To use a specific metrics file:
+
+```bash
+WEB_TOOLS_METRICS_FILE=/tmp/web-tools-metrics.json web-tools metrics --json
+```
+
+If the user asks to clear local statistics, run:
+
+```bash
+web-tools metrics reset
+```
 
 ---
 

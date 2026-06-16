@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/spf13/cobra"
 )
 
@@ -86,7 +87,13 @@ and the optional SearXNG search backend. Missing optional dependencies are repor
 as warnings instead of hard failures.`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			start := time.Now()
 			report := DefaultChecker().Run()
+			var err error
+			if !report.OK {
+				err = fmt.Errorf("doctor reported hard errors")
+			}
+			metrics.ObserveCommand(start, "doctor", metrics.Event{}, err)
 			if flagJSON {
 				fmt.Println(report.RenderJSON())
 			} else {

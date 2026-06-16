@@ -42,6 +42,57 @@
           <div class="status-grid" id="checks"></div>
         </article>
 
+        <article class="panel span-2">
+          <div class="panel-head">
+            <h2 data-i18n="metricsDashboard">Metrics Dashboard</h2>
+            <div class="metrics-actions">
+              <fieldset class="segmented-control" id="metrics-range" aria-label="Metrics range">
+                <legend data-i18n="metricsRange">Range</legend>
+                <label>
+                  <input type="radio" name="metrics_range" value="1h" />
+                  <span>1h</span>
+                </label>
+                <label>
+                  <input type="radio" name="metrics_range" value="24h" />
+                  <span>24h</span>
+                </label>
+                <label>
+                  <input type="radio" name="metrics_range" value="7d" />
+                  <span>7d</span>
+                </label>
+                <label>
+                  <input type="radio" name="metrics_range" value="30d" />
+                  <span>30d</span>
+                </label>
+                <label>
+                  <input type="radio" name="metrics_range" value="all" />
+                  <span>all</span>
+                </label>
+              </fieldset>
+              <button class="secondary-button" id="reset-metrics" type="button" data-i18n="resetMetrics">Reset Metrics</button>
+            </div>
+          </div>
+          <div class="metric-cards" id="metric-cards"></div>
+          <div class="chart-grid">
+            <div class="chart-panel">
+              <div class="chart-title" data-i18n="commandsChart">Commands</div>
+              <div class="chart" id="commands-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <div class="chart-title" data-i18n="providersChart">Providers</div>
+              <div class="chart" id="providers-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <div class="chart-title" data-i18n="readerQualityChart">Reader Quality</div>
+              <div class="chart" id="quality-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <div class="chart-title" data-i18n="durationChart">Recent Duration</div>
+              <div class="chart" id="duration-chart"></div>
+            </div>
+          </div>
+        </article>
+
         <article class="panel">
           <div class="panel-head">
             <h2 data-i18n="provider">Provider</h2>
@@ -159,6 +210,7 @@
         </article>
       </section>
     </main>
-    <script src="/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" defer></script>
+    <script src="/app.js" defer></script>
   </body>
 </html>

@@ -85,9 +85,10 @@ func TestValidateReaderProviderRemoteMissingAuth(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Providers["bigmodel"] = config.ProviderConfig{
 		Type:         "mcp",
-		AuthEnv:      "ZHIPU_APIKEY",
+		AuthEnv:      "WEB_TOOLS_TEST_MISSING_READER_AUTH",
 		Capabilities: []string{"reader"},
 	}
+	t.Setenv("WEB_TOOLS_TEST_MISSING_READER_AUTH", "")
 
 	err := validateReaderProvider(cfg, "bigmodel")
 

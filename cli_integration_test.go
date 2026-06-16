@@ -216,6 +216,76 @@ func TestCLIIntegrationReaderSparseQualityWarning(t *testing.T) {
 	assert.True(t, envelope.Result.Quality.NeedsFallback)
 }
 
+func TestCLIIntegrationMetricsCollectsSearchReaderAndResets(t *testing.T) {
+	bin := buildCLITestBinary(t)
+
+	var serverURL string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"number_of_results":1,"results":[{"title":"Metrics Fixture","url":%q,"content":"safe snippet","parsed_url":["http",%q,"/article"]}]}`, serverURL+"/article", strings.TrimPrefix(serverURL, "http://"))
+		case "/article":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `<!doctype html><html><head><title>Metrics Fixture</title></head><body><article><p>`+strings.Repeat("metrics safe content ", 80)+`</p></article></body></html>`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	serverURL = server.URL
+
+	configPath := writeCLITestConfig(t, serverURL, map[string]any{
+		"default_engine": "searxng",
+		"default_limit":  3,
+	})
+	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
+	env := map[string]string{"WEB_TOOLS_CONFIG": configPath, "WEB_TOOLS_METRICS_FILE": metricsFile}
+
+	_, searchStderr := runCLI(t, bin, []string{"web-search", "private search query marker", "--json"}, env)
+	assert.Empty(t, searchStderr)
+	_, readerStderr := runCLI(t, bin, []string{"web-reader", serverURL + "/article", "--json", "--no-cache"}, env)
+	assert.Empty(t, readerStderr)
+	metricsStdout, metricsStderr := runCLI(t, bin, []string{"metrics", "--json", "--file", metricsFile}, env)
+	assert.Empty(t, metricsStderr)
+
+	assert.Contains(t, metricsStdout, `"web-search"`)
+	assert.Contains(t, metricsStdout, `"web-reader"`)
+	assert.Contains(t, metricsStdout, `"search:searxng"`)
+	assert.Contains(t, metricsStdout, `"reader:builtin-reader"`)
+	assert.NotContains(t, metricsStdout, "private search query marker")
+	assert.NotContains(t, metricsStdout, serverURL)
+	assert.NotContains(t, metricsStdout, "metrics safe content")
+
+	data, err := os.ReadFile(metricsFile)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "private search query marker")
+	assert.NotContains(t, string(data), serverURL)
+	assert.NotContains(t, string(data), "metrics safe content")
+
+	resetStdout, resetStderr := runCLI(t, bin, []string{"metrics", "reset", "--json", "--file", metricsFile}, env)
+	assert.Empty(t, resetStderr)
+	assert.Contains(t, resetStdout, `"ok":true`)
+	afterReset, _ := runCLI(t, bin, []string{"metrics", "--json", "--file", metricsFile}, env)
+	assert.NotContains(t, afterReset, `"web-search"`)
+}
+
+func TestCLIIntegrationMetricsCanBeDisabled(t *testing.T) {
+	bin := buildCLITestBinary(t)
+	dir := t.TempDir()
+	metricsFile := filepath.Join(dir, "metrics.json")
+	note := filepath.Join(dir, "note.txt")
+	require.NoError(t, os.WriteFile(note, []byte("local note for disabled metrics"), 0644))
+
+	stdout, stderr := runCLI(t, bin, []string{"web-reader", note, "--format", "text"}, map[string]string{
+		"WEB_TOOLS_METRICS_FILE": metricsFile,
+		"WEB_TOOLS_NO_METRICS":   "1",
+	})
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "local note")
+	require.NoFileExists(t, metricsFile)
+}
+
 func TestCLIIntegrationConfigProviderAndSkillInstall(t *testing.T) {
 	bin := buildCLITestBinary(t)
 	dir := t.TempDir()

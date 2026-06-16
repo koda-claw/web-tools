@@ -183,6 +183,8 @@ Equivalent direct commands:
 go test ./...
 go vet ./...
 ./scripts/smoke.sh
+./scripts/upgrade_smoke.sh
+./scripts/metrics_smoke.sh
 ```
 
 `make test` includes offline CLI integration tests. They build a temporary
@@ -214,6 +216,11 @@ web-tools gui --no-open --port 0
 The GUI binds to `127.0.0.1` by default. It can inspect setup readiness, configure the BigModel provider, write `~/.config/web-tools/.env`, run basic search/reader smoke tests, export non-sensitive diagnostics, and generate Agent handoff commands. It never displays or returns secret values; `config.json` stores only environment variable names such as `ZHIPU_APIKEY`.
 
 The GUI follows the browser language by default: Chinese browsers get Chinese UI, all other languages default to English. A language selector is available in the header.
+
+The GUI also includes a local metrics dashboard with time ranges (`1h`, `24h`,
+`7d`, `30d`, `all`), command/provider summaries, reader quality, recent
+duration charts, and a reset action. Charts use ECharts when the browser can
+load it and fall back to built-in local rendering when it cannot.
 
 For agents and scripts, prefer the non-interactive CLI:
 
@@ -330,6 +337,40 @@ shell environment or `~/.config/web-tools/.env`; they are never written to
 
 Secrets are read only from environment variables. `doctor --json` reports whether auth is configured, but never prints the token value.
 
+## Local Metrics
+
+`web-tools` records local, non-sensitive aggregate metrics for CLI and GUI
+health checks:
+
+```bash
+web-tools metrics
+web-tools metrics --json
+web-tools metrics --range 24h --json
+web-tools metrics reset --json
+```
+
+Metrics are local only. They do not record search queries, URLs, page titles,
+page content, file paths, headers, tokens, env values, or detailed error
+strings. They record safe aggregates such as command status, duration,
+provider id, result count, reader quality bucket, fallback recommendation, and
+error category.
+
+Default storage path:
+
+- Linux: `$XDG_STATE_HOME/web-tools/metrics.json` or `~/.local/state/web-tools/metrics.json`
+- macOS: `~/Library/Application Support/web-tools/metrics.json`
+- Windows: `%LOCALAPPDATA%\web-tools\metrics.json`
+
+Overrides:
+
+```bash
+WEB_TOOLS_METRICS_FILE=/tmp/web-tools-metrics.json web-tools metrics --json
+WEB_TOOLS_NO_METRICS=1 web-tools web-search "query"
+```
+
+The `metrics` command does not record itself, so inspecting local health does
+not pollute the counters.
+
 ![Provider-ready architecture](assets/images/provider-architecture-visual.png)
 
 ## Install as Agent Skill
@@ -377,7 +418,12 @@ flowchart TB
     CLI --> Search["web-search"]
     CLI --> Reader["web-reader"]
     CLI --> Doctor["doctor"]
+    CLI --> Metrics["metrics"]
     Config["Config\nproviders + defaults"] --> Registry["Provider Registry"]
+    Store["Local metrics store\nno query / URL / content"] --> Metrics
+    Search --> Store
+    Reader --> Store
+    Doctor --> Store
     Search --> Registry
     Reader --> Registry
     Doctor --> Registry
@@ -395,6 +441,7 @@ web-tools
 ├── internal/
 │   ├── config/         # Configuration loading (file + env + defaults)
 │   ├── errors/         # Structured error handling for agent consumption
+│   ├── metrics/        # Local aggregate metrics store and filtering
 │   ├── provider/       # Provider registry and MCP adapters
 │   ├── reader/         # HTTP fetch, readability extraction, cache, converter, browser fallback
 │   └── search/         # SearXNG client, result parsing, output formatting

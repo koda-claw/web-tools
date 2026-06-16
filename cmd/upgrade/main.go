@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/koda-claw/web-tools/internal/upgrade"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +40,7 @@ func Cmd(version string) *cobra.Command {
   web-tools upgrade --only-skill --skill-dir "$HOME/.codex/skills"`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			start := time.Now()
 			opts := upgrade.Options{
 				CurrentVersion:       version,
 				TargetVersion:        flagVersion,
@@ -54,6 +57,13 @@ func Cmd(version string) *cobra.Command {
 				InsecureSkipChecksum: flagInsecureSkipChecksum,
 			}
 			result, err := upgrade.Runner{}.Run(context.Background(), opts)
+			metrics.ObserveCommand(start, "upgrade", metrics.Event{
+				Upgrade: metrics.UpgradeEvent{
+					TargetVersion:    result.TargetVersion,
+					ChecksumVerified: result.ChecksumVerified,
+					BinaryMode:       result.BinaryMode,
+				},
+			}, err)
 			if flagJSON {
 				if err != nil {
 					if appErr, ok := err.(*apperrors.AppError); ok {

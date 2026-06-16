@@ -184,6 +184,8 @@ make check
 go test ./...
 go vet ./...
 ./scripts/smoke.sh
+./scripts/upgrade_smoke.sh
+./scripts/metrics_smoke.sh
 ```
 
 `make test` 包含离线 CLI 集成测试。测试会构建临时 `web-tools` binary，并用本地 HTTP fixture 验证 Agent 的 search-then-read 工作流，不依赖真实搜索引擎或真实浏览器。
@@ -214,6 +216,8 @@ GUI 默认绑定 `127.0.0.1`。它可以检查 setup 状态、配置 BigModel pr
 GUI 不展示、不返回 secret 明文；`config.json` 只保存 `ZHIPU_APIKEY` 这样的环境变量名，不保存 token 值。
 
 GUI 默认跟随浏览器语言：中文浏览器显示中文，其他语言默认显示英文；页面右上角也可以手动切换语言。
+
+GUI 也包含本地指标看板，支持 `1h`、`24h`、`7d`、`30d`、`all` 时间范围筛选，展示命令、provider、reader quality 和最近耗时，并提供 reset 操作。图表在浏览器可加载时使用 ECharts；加载失败时会回退到内置本地渲染，避免离线空白。
 
 Agent 和脚本默认仍然应该使用非交互 CLI：
 
@@ -326,6 +330,34 @@ token 应放在当前 shell 环境变量或 `~/.config/web-tools/.env` 中，不
 
 Secret 只从环境变量读取。`doctor --json` 会报告认证是否已配置，但不会打印 token 值。
 
+## 本地指标
+
+`web-tools` 会记录本地、非敏感的聚合指标，用于 CLI 和 GUI 健康检查：
+
+```bash
+web-tools metrics
+web-tools metrics --json
+web-tools metrics --range 24h --json
+web-tools metrics reset --json
+```
+
+指标只保存在本地。不会记录 search query、URL、页面 title、正文、本地文件路径、HTTP header、token、env value 或详细错误字符串。它只记录命令状态、耗时、provider id、结果数量、reader quality、fallback 建议和 error category 等安全聚合字段。
+
+默认存储路径：
+
+- Linux：`$XDG_STATE_HOME/web-tools/metrics.json` 或 `~/.local/state/web-tools/metrics.json`
+- macOS：`~/Library/Application Support/web-tools/metrics.json`
+- Windows：`%LOCALAPPDATA%\web-tools\metrics.json`
+
+可覆盖或禁用：
+
+```bash
+WEB_TOOLS_METRICS_FILE=/tmp/web-tools-metrics.json web-tools metrics --json
+WEB_TOOLS_NO_METRICS=1 web-tools web-search "query"
+```
+
+`metrics` 命令不会记录自身，所以查看本地健康状态不会污染统计。
+
 ![Provider-ready architecture](assets/images/provider-architecture-visual.png)
 
 ## 安装为 Agent Skill
@@ -370,7 +402,12 @@ flowchart TB
     CLI --> Search["web-search"]
     CLI --> Reader["web-reader"]
     CLI --> Doctor["doctor"]
+    CLI --> Metrics["metrics"]
     Config["Config\nproviders + defaults"] --> Registry["Provider Registry"]
+    Store["Local metrics store\nno query / URL / content"] --> Metrics
+    Search --> Store
+    Reader --> Store
+    Doctor --> Store
     Search --> Registry
     Reader --> Registry
     Doctor --> Registry
@@ -388,6 +425,7 @@ web-tools
 ├── internal/
 │   ├── config/         # 配置加载：文件 + env + defaults
 │   ├── errors/         # 面向 Agent 的结构化错误
+│   ├── metrics/        # 本地聚合指标存储与时间筛选
 │   ├── provider/       # Provider registry 和 MCP adapter
 │   ├── reader/         # HTTP fetch、readability、cache、converter、browser fallback
 │   └── search/         # SearXNG client、结果解析、输出格式

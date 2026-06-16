@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	configcmd "github.com/koda-claw/web-tools/cmd/config"
 	"github.com/koda-claw/web-tools/cmd/doctor"
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/koda-claw/web-tools/internal/setupcheck"
 	"github.com/koda-claw/web-tools/internal/skillinstall"
 	"github.com/spf13/cobra"
@@ -48,6 +50,7 @@ what still needs attention.`,
   web-tools setup --provider bigmodel --enable-search-auto --install-skill`,
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			start := time.Now()
 			if flagCheck {
 				report := setupcheck.Run(setupcheck.Options{
 					Version:  version,
@@ -61,9 +64,17 @@ what still needs attention.`,
 				} else {
 					fmt.Print(report.RenderText())
 				}
+				var err error
 				if !report.OK {
+					err = apperrors.NewInputError(
+						"setup check failed",
+						"one or more setup checks need attention",
+						[]string{"run web-tools setup", "run web-tools doctor --json"},
+					)
+					metrics.ObserveCommand(start, "setup", metrics.Event{}, err)
 					os.Exit(1)
 				}
+				metrics.ObserveCommand(start, "setup", metrics.Event{}, nil)
 				return
 			}
 			opts := Options{
@@ -83,8 +94,10 @@ what still needs attention.`,
 				SkipDoctor:       flagSkipDoctor,
 			}
 			if err := Run(opts); err != nil {
+				metrics.ObserveCommand(start, "setup", metrics.Event{}, err)
 				apperrors.HandleError(err)
 			}
+			metrics.ObserveCommand(start, "setup", metrics.Event{}, nil)
 		},
 	}
 

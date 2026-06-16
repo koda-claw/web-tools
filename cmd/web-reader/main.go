@@ -10,6 +10,7 @@ import (
 
 	"github.com/koda-claw/web-tools/internal/config"
 	apperrors "github.com/koda-claw/web-tools/internal/errors"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/koda-claw/web-tools/internal/provider"
 	mcpprovider "github.com/koda-claw/web-tools/internal/provider/mcp"
 	"github.com/koda-claw/web-tools/internal/reader"
@@ -107,36 +108,49 @@ type QualityInfo struct {
 }
 
 func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, flagMaxWord int, flagTimeout int, flagNoCache bool, flagBrowser bool, flagSession string, flagUA string, flagFormat string, flagProvider string) {
+	start := time.Now()
+	var metric metrics.Event
+	var runErr error
+	defer func() {
+		metrics.ObserveCommand(start, "web-reader", metric, runErr)
+	}()
+
 	if err := validateReaderFlags(flagExtract, flagFormat); err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
 
 	// 1. Parse input
 	input, err := reader.ParseInput(rawInput)
 	if err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
 	if input == nil {
-		apperrors.HandleError(apperrors.NewInputError(
+		runErr = apperrors.NewInputError(
 			"cannot recognize input",
 			fmt.Sprintf("%q is not a valid URL or file path", rawInput),
 			[]string{"provide an http:// or https:// URL", "provide a local file path"},
-		))
+		)
+		apperrors.HandleError(runErr)
 	}
 
 	// 2. Load config with flag overrides
 	cfg, err := loadReaderRuntimeConfig(flagTimeout)
 	if err != nil {
-		apperrors.HandleError(apperrors.NewInputError(
+		runErr = apperrors.NewInputError(
 			"cannot load configuration",
 			err.Error(),
 			[]string{"check config file format", "check environment variables"},
-		))
+		)
+		apperrors.HandleError(runErr)
 	}
 	selectedProvider, err := selectReaderProvider(cfg, flagProvider)
 	if err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
+	metric.Provider = selectedProvider.ID
 
 	// 3. Initialize cache (URL inputs only)
 	var cache *reader.Cache
@@ -147,17 +161,23 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	// 4. Handle file inputs
 	if input.Type == reader.InputFile {
 		if selectedProvider.ID != "builtin-reader" {
-			apperrors.HandleError(apperrors.NewInputError(
+			runErr = apperrors.NewInputError(
 				"reader provider only supports URL input",
 				fmt.Sprintf("provider %q cannot read local files", selectedProvider.ID),
 				[]string{"use --provider builtin-reader for local files"},
-			))
+			)
+			apperrors.HandleError(runErr)
 		}
 		result, err := handleFileInput(input, cfg, flagExtract, flagFormat)
 		if err != nil {
-			apperrors.HandleError(err)
+			runErr = err
+			apperrors.HandleError(runErr)
 		}
-		outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat)
+		applyReaderMetrics(&metric, result)
+		if err := outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat); err != nil {
+			runErr = err
+			apperrors.HandleError(runErr)
+		}
 		return
 	}
 
@@ -169,7 +189,8 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 		result, err = handleProviderURLInput(input, cfg, selectedProvider, flagFormat)
 	}
 	if err != nil {
-		apperrors.HandleError(err)
+		runErr = err
+		apperrors.HandleError(runErr)
 	}
 
 	// 6. Check extraction quality
@@ -183,7 +204,24 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	}
 
 	// 7. Output
-	outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat)
+	applyReaderMetrics(&metric, result)
+	if err := outputResult(result, flagJSON, flagOutput, flagMaxWord, flagFormat); err != nil {
+		runErr = err
+		apperrors.HandleError(runErr)
+	}
+}
+
+func applyReaderMetrics(event *metrics.Event, result *PipelineResult) {
+	if result == nil {
+		return
+	}
+	event.WordCountBucket = metrics.WordCountBucket(result.WordCount)
+	if result.Quality != nil {
+		event.Quality = result.Quality.Score
+		event.FallbackRecommended = result.Quality.NeedsFallback
+	} else {
+		event.FallbackRecommended = result.NeedsFallback
+	}
 }
 
 func validateReaderProvider(cfg config.Config, requested string) error {
@@ -544,7 +582,7 @@ func extractModeName(source string, extractMode string) string {
 	return source
 }
 
-func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flagMaxWord int, flagFormat string) {
+func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flagMaxWord int, flagFormat string) error {
 	if flagMaxWord > 0 {
 		words := strings.Fields(result.Content)
 		if len(words) > flagMaxWord {
@@ -561,20 +599,21 @@ func outputResult(result *PipelineResult, flagJSON bool, flagOutput string, flag
 
 	output, err := renderOutput(result, flagJSON, flagFormat)
 	if err != nil {
-		apperrors.HandleError(err)
+		return err
 	}
 
 	if flagOutput != "" {
 		if err := os.WriteFile(flagOutput, []byte(output), 0644); err != nil {
-			apperrors.HandleError(apperrors.NewInputError(
+			return apperrors.NewInputError(
 				"cannot write to output file",
 				err.Error(),
 				[]string{"check output path write permissions"},
-			))
+			)
 		}
 	} else {
 		fmt.Println(output)
 	}
+	return nil
 }
 
 func renderOutput(result *PipelineResult, asJSON bool, format string) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
+	"github.com/koda-claw/web-tools/internal/metrics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -131,6 +133,97 @@ func TestDiagnosticsContainsGuideAndNoSecret(t *testing.T) {
 	assert.NotContains(t, body, ".tar.gz")
 	assert.NotContains(t, body, "web-tools_Darwin")
 	assert.NotContains(t, body, "super-secret-token")
+}
+
+func TestMetricsAPIsReadResetAndDiagnosticsSummary(t *testing.T) {
+	dir := isolatedHome(t)
+	metricsFile := filepath.Join(dir, "metrics.json")
+	t.Setenv("WEB_TOOLS_METRICS_FILE", metricsFile)
+	store := metrics.NewStore("")
+	require.NoError(t, store.Record(metrics.Event{
+		At:         time.Now(),
+		Command:    "web-search",
+		Provider:   "duckduckgo",
+		Status:     "success",
+		DurationMS: 12,
+	}))
+	server := NewServer(Options{Version: "test", SkillDir: filepath.Join(dir, "skills")})
+
+	body := requestJSON(t, server, http.MethodGet, "/api/metrics?range=24h&bucket=auto", nil)
+	assert.Contains(t, body, `"ok":true`)
+	assert.Contains(t, body, `"web-search"`)
+	assert.Contains(t, body, `"search:duckduckgo"`)
+
+	diag := requestJSON(t, server, http.MethodGet, "/api/diagnostics", nil)
+	assert.Contains(t, diag, `"metrics"`)
+	assert.Contains(t, diag, `"web-search"`)
+	assert.NotContains(t, diag, "secret-token")
+
+	reset := requestJSON(t, server, http.MethodPost, "/api/metrics/reset", map[string]any{})
+	assert.Contains(t, reset, `"ok":true`)
+	after := requestJSON(t, server, http.MethodGet, "/api/metrics", nil)
+	assert.NotContains(t, after, `"web-search"`)
+}
+
+func TestMetricsAPIRejectsInvalidRange(t *testing.T) {
+	dir := isolatedHome(t)
+	t.Setenv("WEB_TOOLS_METRICS_FILE", filepath.Join(dir, "metrics.json"))
+
+	rr := request(t, NewServer(Options{Version: "test", SkillDir: filepath.Join(dir, "skills")}), http.MethodGet, "/api/metrics?range=3h", nil)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "invalid metrics range")
+}
+
+func TestReaderAndSearchTestsRecordSafeMetrics(t *testing.T) {
+	dir := isolatedHome(t)
+	metricsFile := filepath.Join(dir, "metrics.json")
+	t.Setenv("WEB_TOOLS_METRICS_FILE", metricsFile)
+	var serverURL string
+	fixture := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"number_of_results":1,"results":[{"title":"GUI Fixture","url":%q,"content":"safe snippet","parsed_url":["http",%q,"/article"]}]}`, serverURL+"/article", strings.TrimPrefix(serverURL, "http://"))
+		case "/article":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(`<html><head><title>GUI Fixture</title></head><body><article><p>` + strings.Repeat("private page content marker ", 80) + `</p></article></body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer fixture.Close()
+	serverURL = fixture.URL
+
+	cfg := map[string]any{
+		"reader": map[string]any{"cache_dir": filepath.Join(dir, "cache"), "browser_fallback": false, "min_content_length": 20},
+		"search": map[string]any{"searxng_url": serverURL, "default_engine": "searxng"},
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	require.NoError(t, err)
+	configPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(configPath, data, 0644))
+	t.Setenv("WEB_TOOLS_CONFIG", configPath)
+
+	guiServer := NewServer(Options{Version: "test", SkillDir: filepath.Join(dir, "skills")})
+	searchBody := requestJSON(t, guiServer, http.MethodPost, "/api/test/search", map[string]any{
+		"query":    "private search query marker",
+		"provider": "searxng",
+		"limit":    1,
+	})
+	assert.Contains(t, searchBody, "GUI Fixture")
+	readerBody := requestJSON(t, guiServer, http.MethodPost, "/api/test/reader", map[string]any{
+		"url":      serverURL + "/article",
+		"provider": "builtin-reader",
+	})
+	assert.Contains(t, readerBody, "GUI Fixture")
+
+	metricsBody := requestJSON(t, guiServer, http.MethodGet, "/api/metrics", nil)
+	assert.Contains(t, metricsBody, `"gui-test-search"`)
+	assert.Contains(t, metricsBody, `"gui-test-reader"`)
+	assert.NotContains(t, metricsBody, "private search query marker")
+	assert.NotContains(t, metricsBody, serverURL)
+	assert.NotContains(t, metricsBody, "private page content marker")
 }
 
 func isolatedHome(t *testing.T) string {

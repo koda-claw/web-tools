@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.7.0 - 2026-06-16
+
+Feature work for local metrics and GUI observability.
+
+### Added
+
+- `web-tools metrics`, `web-tools metrics --json`, range filtering, and `web-tools metrics reset`.
+- Local-only aggregate metrics store with `WEB_TOOLS_METRICS_FILE` override and `WEB_TOOLS_NO_METRICS=1` disable switch.
+- Metrics collection for `web-search`, `web-reader`, `setup`, `doctor`, `upgrade`, GUI search test, and GUI reader test.
+- GUI `/api/metrics`, `/api/metrics/reset`, diagnostics metrics summary, time range selector, reset confirmation, and charts.
+- Metrics smoke coverage through `scripts/metrics_smoke.sh` and `make metrics-smoke`.
+
+### Security
+
+- Metrics exclude search queries, URLs, titles, content, file paths, headers, tokens, env values, and detailed error strings.
+- Recent events are capped and contain only safe fields.
+
 ## v1.6.0 - 2026-06-16
 
 Feature release for self-upgrade and Agent installation closure.
