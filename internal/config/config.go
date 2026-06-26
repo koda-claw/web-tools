@@ -88,6 +88,18 @@ func defaultProviders() map[string]ProviderConfig {
 			Type:         "builtin",
 			Capabilities: []string{"search"},
 		},
+		"bing": {
+			Type:         "builtin",
+			Capabilities: []string{"search"},
+		},
+		"baidu": {
+			Type:         "builtin",
+			Capabilities: []string{"search"},
+		},
+		"sogou": {
+			Type:         "builtin",
+			Capabilities: []string{"search"},
+		},
 		"builtin-reader": {
 			Type:         "builtin",
 			Capabilities: []string{"reader"},

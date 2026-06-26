@@ -114,6 +114,9 @@ web-tools upgrade --only-skill
 ### 1. 搜索默认可用
 
 `web-search` 默认使用 DuckDuckGo Lite，不需要 Docker 或 API key。
+同时内置 Bing、Baidu 和 Sogou 显式 provider，适合用户或流程明确指定时使用。
+Bing/Baidu/Sogou 会使用接近浏览器的请求头、按 provider 控制请求间隔，并只对临时
+502/503/504 故障做一次保守重试；验证码或限流页面会返回结构化错误，不会激进重试。
 
 SearXNG 是可选后端，适合需要更高吞吐或更多来源时使用：
 
@@ -145,6 +148,9 @@ web-tools web-search "latest AI news"
 web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 web-tools web-search "golang readability" --provider duckduckgo --json
+web-tools web-search "golang readability" --provider bing --json
+web-tools web-search "人工智能 最新进展" --provider baidu --json
+web-tools web-search "人工智能 最新进展" --provider sogou --json
 web-tools web-search "golang readability" --no-cache --json
 
 # 读取 URL
@@ -212,7 +218,7 @@ web-tools gui
 web-tools gui --no-open --port 0
 ```
 
-GUI 默认绑定 `127.0.0.1`。它可以检查 setup 状态、配置 BigModel provider、写入 `~/.config/web-tools/.env`、运行基础 search/reader smoke test、导出非敏感诊断 JSON，并生成给 Agent 使用的 handoff 命令。
+GUI 默认绑定 `127.0.0.1`。它可以检查 setup 状态、配置 BigModel provider、写入 `~/.config/web-tools/.env`、运行基础 search/reader smoke test、导出非敏感诊断 JSON，并生成给 Agent 使用的 handoff 命令。搜索 smoke test 可以选择内置 `auto`、`duckduckgo`、`searxng`、`bing`、`baidu`、`sogou` provider，也可以选择已配置的 `bigmodel` 等 provider。
 
 GUI 不展示、不返回 secret 明文；`config.json` 只保存 `ZHIPU_APIKEY` 这样的环境变量名，不保存 token 值。
 
@@ -258,15 +264,17 @@ web-tools skill install --force
 
 CLI 参数会覆盖配置默认值。`--format=html` 只在提取结果里真的有 HTML 时可用；纯文本和本地转换文件不会被包装成假的 HTML，而是返回结构化 input error。
 
-`web-reader --json` 包含 `quality` 对象，包括提取评分、词数、最低词数阈值、是否建议 fallback 和原因。内容稀疏 warning 会写到 stderr，stdout 保持机器可读。
+`web-reader --json` 包含 `quality` 对象，包括提取评分、词数、最低词数阈值、是否建议 fallback 和原因。内容稀疏 warning 会写到 stderr，stdout 保持机器可读。当 `reader.default_provider_chain` 包含已配置的 MCP reader，例如 `["builtin-reader", "bigmodel"]` 时，`--provider auto` 会在内置 reader 返回空内容/低质量内容，或遇到适合 fallback 的抓取/提取错误时尝试下一个 provider。
 
 `web-search` 会保留短生命周期的进程内结果缓存，减少 GUI 或库调用场景里的重复后端请求。使用 `--no-cache` 可以绕过缓存。缓存不会持久化到磁盘，metrics 也不会记录 query。
 
-DuckDuckGo Lite 的限流或反爬响应会返回结构化 engine error，并在 auto 模式 fallback 到下一个 provider 前做短重试。warning 只写 stderr，JSON stdout 保持机器可读。
+DuckDuckGo Lite 的限流或反爬响应会返回结构化 engine error，并在 auto 模式 fallback 到下一个 provider 前做短重试。Bing/Baidu/Sogou 显式 provider 也会控制请求间隔，并只对临时网关/服务故障重试一次；验证码、403、429 会直接返回结构化错误。被限流的 provider 会进入短期进程内冷却，auto/custom chain 会临时跳过它并尝试下一个 provider；冷却到期后，下一次请求会正常探活，成功后自动恢复。warning 只写 stderr，JSON stdout 保持机器可读。
 
 ### Provider 配置
 
 `--provider` 是新集成的推荐入口。`--engine` 继续保留，用于兼容 `auto`、`duckduckgo`、`searxng`。
+内置 search providers 包括 `searxng`、`duckduckgo`、`bing`、`baidu`、`sogou`。
+Bing、Baidu 和 Sogou 是显式 provider；默认 auto 链路保持不变。
 
 默认无 key 路径仍然本地优先：
 
@@ -297,6 +305,17 @@ web-tools setup \
   --auth-env ZHIPU_APIKEY \
   --enable-search-auto
 ```
+
+如果希望 `web-reader --provider auto` 的读取 fallback 也尝试 BigModel：
+
+```bash
+web-tools setup \
+  --provider bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-reader-auto
+```
+
+Reader provider fallback 用于内容稀疏、JS-heavy 页面和部分反爬 HTTP 失败的恢复，不绕过登录、验证码、付费墙或授权要求；遇到这类限制时应保留 URL 并如实说明。
 
 `web-tools setup` 会安装或更新 Agent skill，在需要时写 provider 配置，可选写入 env file，并运行 `doctor`。
 如果只想改配置，也可以使用更聚焦的配置命令：

@@ -61,7 +61,7 @@ flowchart TB
     SearchCmd --> Registry
     ReaderCmd --> Registry
 
-    Registry --> BuiltinSearch["builtin search providers\nsearxng / duckduckgo"]
+    Registry --> BuiltinSearch["builtin search providers\nsearxng / duckduckgo / bing / baidu / sogou"]
     Registry --> BuiltinReader["builtin-reader\nfetch + readability + cache + browser fallback"]
     Registry --> MCPAdapter["mcp adapter\nStreamable HTTP + SSE + JSON-RPC"]
     Registry --> FutureAdapters["future adapters\nhttp / exec"]
@@ -137,10 +137,13 @@ type ReaderProvider interface {
 
 内置实现，不需要外部进程或远程服务。
 
-初始 builtin provider：
+当前 builtin provider：
 
 - `duckduckgo`：search only。
 - `searxng`：search only，需要本地 SearXNG。
+- `bing`：search only，显式 provider，不在默认 auto chain。
+- `baidu`：search only，显式 provider，不在默认 auto chain。
+- `sogou`：search only，显式 provider，不在默认 auto chain；部分网络容易触发验证码。
 - `builtin-reader`：reader only，包含 HTTP fetch、readability、MarkItDown、cache、agent-browser fallback。
 
 ### http

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -43,6 +44,16 @@ func TestStatusDoesNotLeakSecret(t *testing.T) {
 
 	assert.Contains(t, body, `"auth_configured":true`)
 	assert.NotContains(t, body, "super-secret-token")
+}
+
+func TestSearchFormIncludesExplicitBuiltinProviders(t *testing.T) {
+	data, err := fs.ReadFile(embeddedAssets, "assets/index.html")
+	require.NoError(t, err)
+	html := string(data)
+
+	assert.Contains(t, html, `<option value="bing">bing</option>`)
+	assert.Contains(t, html, `<option value="baidu">baidu</option>`)
+	assert.Contains(t, html, `<option value="sogou">sogou</option>`)
 }
 
 func TestProviderAndEnvAPIsWriteConfigWithoutLeakingValue(t *testing.T) {
@@ -119,6 +130,49 @@ func TestReaderTestAPIBigModelRequiresAuth(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "provider auth is not configured")
 	assert.Contains(t, rr.Body.String(), "ZHIPU_APIKEY")
+}
+
+func TestReaderTestAPIAutoFallsBackToBigModelOnLowQualityBuiltin(t *testing.T) {
+	dir := isolatedHome(t)
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><head><title>Sparse</title></head><body><main><p>tiny</p></main></body></html>`))
+	}))
+	defer page.Close()
+	mcp := newGUIReaderMCPServer(t, `{"title":"Provider Article","url":"https://example.com/provider","content":"Provider body has enough words for GUI fallback","metadata":{"site":"provider"}}`)
+	defer mcp.Close()
+
+	cfg := map[string]any{
+		"providers": map[string]any{
+			"bigmodel": map[string]any{
+				"type":         "mcp",
+				"auth_env":     "ZHIPU_APIKEY",
+				"capabilities": []string{"reader"},
+				"reader":       map[string]any{"url": mcp.URL, "tool": "webReader"},
+			},
+		},
+		"reader": map[string]any{
+			"browser_fallback":       false,
+			"min_content_length":     3,
+			"default_provider":       "auto",
+			"default_provider_chain": []string{"builtin-reader", "bigmodel"},
+		},
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	require.NoError(t, err)
+	configPath := filepath.Join(dir, "config.json")
+	require.NoError(t, os.WriteFile(configPath, data, 0644))
+	t.Setenv("WEB_TOOLS_CONFIG", configPath)
+
+	body := requestJSON(t, NewServer(Options{Version: "test", SkillDir: filepath.Join(dir, "skills")}), http.MethodPost, "/api/test/reader", map[string]any{
+		"url":      page.URL,
+		"provider": "auto",
+	})
+
+	assert.Contains(t, body, `"provider":"bigmodel"`)
+	assert.Contains(t, body, `"extract_mode":"provider:bigmodel"`)
+	assert.Contains(t, body, "Provider Article")
 }
 
 func TestDiagnosticsContainsGuideAndNoSecret(t *testing.T) {
@@ -270,6 +324,35 @@ func compactJSON(t *testing.T, data []byte) string {
 	out, err := json.Marshal(v)
 	require.NoError(t, err)
 	return strings.TrimSpace(string(out))
+}
+
+func newGUIReaderMCPServer(t *testing.T, readerPayload string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+		var req map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+		switch req["method"] {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
+		case "notifications/initialized":
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
+		case "tools/call":
+			text, _ := json.Marshal(readerPayload)
+			payload, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": string(text)}},
+					"isError": false,
+				},
+			})
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
+		default:
+			t.Fatalf("unexpected method %v", req["method"])
+		}
+	}))
 }
 
 func TestServerShutdownWithoutStart(t *testing.T) {

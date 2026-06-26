@@ -352,42 +352,124 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 	if providerID == "" {
 		providerID = "auto"
 	}
-	if providerID == "auto" && len(cfg.Reader.DefaultProviderChain) == 0 {
-		providerID = "builtin-reader"
-	}
-	selected, err := selectGUIReaderProvider(*cfg, providerID)
+	selection, err := selectGUIReaderProviders(*cfg, providerID)
 	if err != nil {
 		recordErr = err
 		writeError(w, recordErr)
 		return
 	}
-	metric.Provider = selected.ID
-
-	if selected.ID != "builtin-reader" {
-		s.handleProviderReaderTest(w, input, *cfg, selected, &metric, &recordErr)
+	body, err := s.runGUIReaderProviders(input, *cfg, selection, &metric)
+	if err != nil {
+		recordErr = err
+		writeError(w, recordErr)
 		return
 	}
+	writeJSON(w, http.StatusOK, body)
+}
 
+func selectGUIReaderProvider(cfg config.Config, requested string) (provider.Provider, error) {
+	selection, err := selectGUIReaderProviders(cfg, requested)
+	if err != nil {
+		return provider.Provider{}, err
+	}
+	return selection.providers[0], nil
+}
+
+type guiReaderProviderSelection struct {
+	providers []provider.Provider
+	auto      bool
+}
+
+func selectGUIReaderProviders(cfg config.Config, requested string) (guiReaderProviderSelection, error) {
+	reg, err := provider.NewRegistry(cfg.Providers)
+	if err != nil {
+		return guiReaderProviderSelection{}, err
+	}
+	switch requested {
+	case "", "auto":
+		chain := cfg.Reader.DefaultProviderChain
+		if len(chain) == 0 {
+			chain = []string{"builtin-reader"}
+		}
+		providers, _, err := reg.ResolveChain(chain, provider.CapabilityReader)
+		if err != nil {
+			return guiReaderProviderSelection{}, err
+		}
+		if len(providers) == 0 {
+			return guiReaderProviderSelection{}, apperrors.NewInputError(
+				"no reader providers available",
+				"reader auto chain did not resolve to any enabled reader providers",
+				[]string{"check reader.default_provider_chain", "configure provider auth envs"},
+			)
+		}
+		return guiReaderProviderSelection{providers: providers, auto: true}, nil
+	default:
+		selected, err := reg.Get(requested, provider.CapabilityReader)
+		if err != nil {
+			return guiReaderProviderSelection{}, err
+		}
+		if selected.ID != "builtin-reader" && selected.Config.Type != "mcp" {
+			return guiReaderProviderSelection{}, apperrors.NewInputError(
+				"reader provider is not implemented in GUI",
+				fmt.Sprintf("provider %q uses unsupported type %q", requested, selected.Config.Type),
+				[]string{"use builtin-reader", "use a provider with type mcp"},
+			)
+		}
+		return guiReaderProviderSelection{providers: []provider.Provider{selected}}, nil
+	}
+}
+
+func (s *Server) runGUIReaderProviders(input *reader.Input, cfg config.Config, selection guiReaderProviderSelection, metric *metrics.Event) (map[string]any, error) {
+	var lastErr error
+	var lastLowQuality map[string]any
+	for idx, selected := range selection.providers {
+		body, err := s.runGUIReaderProvider(input, cfg, selected)
+		if err != nil {
+			lastErr = err
+			if selection.auto && idx < len(selection.providers)-1 && reader.ShouldProviderFallbackError(err) {
+				continue
+			}
+			return nil, err
+		}
+		result, _ := body["result"].(map[string]any)
+		quality, _ := result["quality"].(guiQualityInfo)
+		if selection.auto && idx < len(selection.providers)-1 && quality.NeedsFallback {
+			lastLowQuality = body
+			continue
+		}
+		applyGUIReaderMetric(metric, result)
+		return body, nil
+	}
+	if lastLowQuality != nil {
+		if result, ok := lastLowQuality["result"].(map[string]any); ok {
+			applyGUIReaderMetric(metric, result)
+		}
+		return lastLowQuality, nil
+	}
+	return nil, lastErr
+}
+
+func (s *Server) runGUIReaderProvider(input *reader.Input, cfg config.Config, selected provider.Provider) (map[string]any, error) {
+	if selected.ID == "builtin-reader" {
+		return s.runBuiltinReaderTest(input, cfg, selected)
+	}
+	return s.runProviderReaderTest(input, cfg, selected)
+}
+
+func (s *Server) runBuiltinReaderTest(input *reader.Input, cfg config.Config, selected provider.Provider) (map[string]any, error) {
 	fetcher := reader.NewFetcher(cfg.Reader)
 	fetchResult, err := fetcher.Fetch(input.URL.String())
 	if err != nil {
-		recordErr = err
-		writeError(w, recordErr)
-		return
+		return nil, err
 	}
 	defer fetchResult.Body.Close()
 	extracted, err := reader.NewExtractor(cfg.Reader).Extract(fetchResult.Body, input.URL)
 	if err != nil {
-		recordErr = err
-		writeError(w, recordErr)
-		return
+		return nil, err
 	}
 	wordCount := len(strings.Fields(extracted.TextContent))
 	quality := guiQuality(wordCount, cfg.Reader.MinContentLength)
-	metric.WordCountBucket = metrics.WordCountBucket(wordCount)
-	metric.Quality = quality.Score
-	metric.FallbackRecommended = quality.NeedsFallback
-	writeJSON(w, http.StatusOK, map[string]any{
+	return map[string]any{
 		"ok": true,
 		"result": map[string]any{
 			"source":       input.URL.String(),
@@ -402,62 +484,18 @@ func (s *Server) handleTestReader(w http.ResponseWriter, r *http.Request) {
 			"provider":     selected.ID,
 			"quality":      quality,
 		},
-	})
+	}, nil
 }
 
-func selectGUIReaderProvider(cfg config.Config, requested string) (provider.Provider, error) {
-	reg, err := provider.NewRegistry(cfg.Providers)
-	if err != nil {
-		return provider.Provider{}, err
-	}
-	switch requested {
-	case "", "auto":
-		chain := cfg.Reader.DefaultProviderChain
-		if len(chain) == 0 {
-			chain = []string{"builtin-reader"}
-		}
-		providers, _, err := reg.ResolveChain(chain, provider.CapabilityReader)
-		if err != nil {
-			return provider.Provider{}, err
-		}
-		if len(providers) == 0 {
-			return provider.Provider{}, apperrors.NewInputError(
-				"no reader providers available",
-				"reader auto chain did not resolve to any enabled reader providers",
-				[]string{"check reader.default_provider_chain", "configure provider auth envs"},
-			)
-		}
-		return providers[0], nil
-	default:
-		selected, err := reg.Get(requested, provider.CapabilityReader)
-		if err != nil {
-			return provider.Provider{}, err
-		}
-		if selected.ID != "builtin-reader" && selected.Config.Type != "mcp" {
-			return provider.Provider{}, apperrors.NewInputError(
-				"reader provider is not implemented in GUI",
-				fmt.Sprintf("provider %q uses unsupported type %q", requested, selected.Config.Type),
-				[]string{"use builtin-reader", "use a provider with type mcp"},
-			)
-		}
-		return selected, nil
-	}
-}
-
-func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.Input, cfg config.Config, selected provider.Provider, metric *metrics.Event, recordErr *error) {
+func (s *Server) runProviderReaderTest(input *reader.Input, cfg config.Config, selected provider.Provider) (map[string]any, error) {
 	client := mcpprovider.NewClient(selected.Config, os.Getenv(selected.Config.AuthEnv))
 	result, err := client.Read(context.Background(), input.URL.String())
 	if err != nil {
-		*recordErr = err
-		writeError(w, err)
-		return
+		return nil, err
 	}
 	content := result.Content
 	wordCount := len(strings.Fields(content))
 	quality := guiQuality(wordCount, cfg.Reader.MinContentLength)
-	metric.WordCountBucket = metrics.WordCountBucket(wordCount)
-	metric.Quality = quality.Score
-	metric.FallbackRecommended = quality.NeedsFallback
 	metadata := result.Metadata
 	if metadata == nil {
 		metadata = map[string]string{}
@@ -468,7 +506,7 @@ func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.I
 	if title == "" {
 		title = input.URL.String()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	return map[string]any{
 		"ok": true,
 		"result": map[string]any{
 			"source":       input.URL.String(),
@@ -484,7 +522,23 @@ func (s *Server) handleProviderReaderTest(w http.ResponseWriter, input *reader.I
 			"metadata":     metadata,
 			"quality":      quality,
 		},
-	})
+	}, nil
+}
+
+func applyGUIReaderMetric(metric *metrics.Event, result map[string]any) {
+	if metric == nil || result == nil {
+		return
+	}
+	if providerID, ok := result["provider"].(string); ok {
+		metric.Provider = providerID
+	}
+	if wordCount, ok := result["word_count"].(int); ok {
+		metric.WordCountBucket = metrics.WordCountBucket(wordCount)
+	}
+	if quality, ok := result["quality"].(guiQualityInfo); ok {
+		metric.Quality = quality.Score
+		metric.FallbackRecommended = quality.NeedsFallback
+	}
 }
 
 type guiQualityInfo struct {

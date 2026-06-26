@@ -76,6 +76,7 @@ non-interactive CLI commands in this skill instead of depending on the GUI.
   - `agent-browser` (`npm i -g agent-browser`) — for browser fallback on JS-rendered pages
 - **web-search**: Works standalone via DuckDuckGo Lite (zero dependencies). Optional advanced backend:
   - SearXNG (aggregates Google, Bing, DDG): requires Docker → `cd docker && docker compose up -d`
+  - Explicit built-in providers `bing`, `baidu`, and `sogou`: no key, but captcha/rate-limit prone; use only when selected by the task or user
   - Verify SearXNG: `curl -s -o /dev/null -w '%{http_code}' http://localhost:8888`
   - Optional MCP providers can be configured through `providers.<id>` and selected with `--provider`
 
@@ -121,8 +122,9 @@ web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --enable-search-auto
 web-tools setup --provider bigmodel --auth-env ZHIPU_APIKEY --enable-reader-auto --skip-doctor
 ```
 
-`reader auto` starts as `builtin-reader`. Do not silently add remote reader
-fallbacks; ask for or rely on explicit user confirmation.
+`reader auto` starts as `builtin-reader`. Add remote reader fallback only when
+the user explicitly enables it or existing config already includes it; once
+configured, `web-reader --provider auto` may use that chain automatically.
 
 ## Building
 
@@ -215,7 +217,7 @@ web-tools web-search "<query>" [flags]
 | `--locale` | string | `auto` | Language preference: `zh-CN`, `en-US`, `auto` |
 | `--category` | string | `general` | Category: `general` / `images` / `news` / `videos` / `files` |
 | `--time-range` | string | `any` | Time filter: `any` / `day` / `week` / `month` / `year` |
-| `--provider` | string | `auto` | Search provider: `auto` / `duckduckgo` / `searxng` / configured provider id |
+| `--provider` | string | `auto` | Search provider: `auto` / `duckduckgo` / `searxng` / `bing` / `baidu` / `sogou` / configured provider id |
 | `--engine` | string | `auto` | Compatibility alias for built-in search engines |
 | `--include-domain` | string list | — | Only include matching domains; repeat or comma-separate |
 | `--exclude-domain` | string list | — | Exclude matching domains; repeat or comma-separate |
@@ -243,11 +245,26 @@ web-tools web-search "AI news" --exclude-domain reddit.com,medium.com
 
 # Use an explicit provider
 web-tools web-search "Go readability library" --provider duckduckgo --json
+web-tools web-search "Go readability library" --provider bing --json
+web-tools web-search "人工智能 最新进展" --provider baidu --json
+web-tools web-search "人工智能 最新进展" --provider sogou --json
 ```
 
 If `--provider` and `--engine` are both explicitly passed with different values,
 the command fails with a structured input error. Prefer `--provider` in new
 workflows.
+
+`bing`, `baidu`, and `sogou` are explicit built-in providers. They are not part of the
+default `auto` chain unless the user configures `search.default_provider_chain`
+to include them. They pace requests by provider and retry only temporary
+502/503/504 failures once. Captcha, 403, and 429 responses are structured
+rate-limit errors; do not loop retries or claim the result is unavailable only
+because one explicit provider was blocked. Rate-limited providers enter a short
+in-process cooldown. Auto/custom chains skip cooling providers temporarily; when
+the cooldown expires, the next request probes the provider and clears the state
+on success.
+Sogou is especially captcha-sensitive on some networks, so treat it as an
+optional Chinese-query source, not a stable default fallback.
 
 ### Exit codes
 
@@ -294,9 +311,12 @@ Format behavior:
 - `--json`: stable JSON envelope with all available fields; `--format` only controls non-JSON rendering
 
 Reader quality:
-- JSON output includes `quality.score`, `quality.word_count`, `quality.min_words`, `quality.needs_fallback`, and `quality.reasons`
+- JSON output includes a `quality` object. `quality.score` is a string enum (`"high"` / `"medium"` / `"low"` / `"empty"`), NOT a numeric value. Some pages (pure CSR-SPA) may omit the `quality` field entirely; use `word_count` and content structure for heuristic fallback.
+- Other quality fields: `quality.word_count`, `quality.min_words`, `quality.reasons` (extraction mode hint)
 - Sparse extraction warnings are written to stderr, not stdout
 - HTTP 4xx/5xx responses do not trigger browser fallback; browser fallback is for network/extraction failures and explicit `--browser`
+- If the user has configured `reader.default_provider_chain` such as `["builtin-reader", "bigmodel"]`, `web-reader --provider auto` will try the next configured reader provider when builtin extraction is empty/low quality or hits a fallback-eligible fetch/extraction error.
+- Reader provider fallback is not captcha/login/paywall bypass. Preserve the URL and report those limits honestly.
 
 ### Input type detection
 
@@ -369,13 +389,13 @@ This tool is primarily for Agent research workflows. Prefer composing `web-searc
 
 ### Recommended research loop
 
-1. Check the local setup when the task is broad, blocked, or depends on optional browser/file conversion tools:
+1. 🔴 **Environment readiness check** — Run when the task is broad, blocked, or depends on optional browser/file conversion tools:
 
 ```bash
 web-tools doctor --json
 ```
 
-2. Search with structured output:
+2. 🔴 **Pre-search checks** — For multi-search tasks, ensure: adjacent `web-search` calls spaced ≥ 2s apart; repeated same-query searches spaced ≥ 10s apart (cache first result with `-o`); if previous search returned exit=1 or empty array, wait 10s before next. Then search with structured output:
 
 ```bash
 web-tools web-search "Go readability library" --limit 5 --json
@@ -397,9 +417,22 @@ web-tools web-search "Go readability library" \
 web-tools web-reader "https://github.com/go-shiori/go-readability" --json
 ```
 
-5. Inspect `quality.score`, `quality.needs_fallback`, `quality.word_count`, and stderr warnings. Retry with browser only when extraction is sparse or the page is likely JS-rendered:
+5. 🔴 **Read quality check (required)** — Inspect the `quality` fields from JSON output and stderr warnings. Apply the following decision table:
+
+| Condition | Action |
+|-----------|--------|
+| `quality.score == "high"`, or (no `quality` field AND `word_count > 200` AND content has structured headings/paragraphs) | ✅ Use directly |
+| `quality.score == "medium"` or `"low"` | 🔴 If reader auto chain includes a configured provider, rerun `web-reader URL --provider auto --json --no-cache`; otherwise retry with `--browser` for JS-rendered pages |
+| `quality` field missing AND `word_count < 200` | 🔴 Content may be sparse or CSR empty-shell; check stderr warnings then decide `--browser` |
+| `quality.word_count < 50` (regardless of score) | 🔴 Content too sparse; this source is likely not an article page — move to next URL in search results |
+| stderr has warnings AND `--browser` not yet used | 🔴 Extraction incomplete; retry with `--browser` |
+| After `--browser`, score is `"low"` AND word_count < 100 | 🔴 Source truly unusable; report honestly and switch to next source |
+| After `--browser`, word_count dropped AND original reader had >500 words of structured content | ⚠️ Page is likely SSR-SPA (server-rendered); keep the original reader result — `--browser` introduces nav/sidebar chrome noise |
+
+> **SSR vs CSR detection**: If the builtin reader returns >500 words with headings/lists/code blocks, the server already rendered complete HTML (SSR/SSG). `--browser` adds chrome noise for SSR pages. Reserve `--browser` for CSR-only pages (HTML is an empty shell, reader extracts <200 words).
 
 ```bash
+# Browser fallback
 web-tools web-reader "https://example.com/article" --browser --json
 ```
 
@@ -442,6 +475,62 @@ web-tools web-reader https://spa-site.com/page --browser
 web-tools web-reader ./report.pdf -o /tmp/report.md
 web-tools web-reader ./slides.pptx -o /tmp/slides.md
 ```
+
+## Exception handling
+
+This tool chains multiple optional dependencies and network boundaries. When the following conditions arise, follow the table — do **not** silently swallow errors or fabricate results.
+
+### Search exceptions
+
+| Trigger | One-line fix | Still-fails fallback |
+|---------|-------------|---------------------|
+| `web-search` returns 0 results | Switch `--locale` / shorten keywords / widen `--time-range` | Switch to `--provider duckduckgo` (if using SearXNG); or retry with English keywords |
+| `web-search` exit=4 (SearXNG unreachable) | Auto-fallback to DuckDuckGo (`--provider duckduckgo`) | Default `--provider auto` includes fallback logic; usually no manual intervention needed |
+| `web-search` exit=1 (network timeout) | Retry once (interval ≥ 2 seconds) | Report "network currently unreachable" honestly; do not guess results |
+| DuckDuckGo results are clearly irrelevant | Add `--include-domain` to restrict to trusted domains; or switch `--locale en-US` for English search | Narrow to 2–3 high-trust targeted searches |
+| DuckDuckGo suspected rate-limiting (consecutive exit=1 or empty returns) | 🔴 Wait 10 seconds → `web-tools doctor --json` confirm network → retry once | Switch `--locale` to reduce per-request load; use `--provider searxng` for multi-round searches (if deployed) |
+| Bing/Baidu/Sogou explicit provider returns captcha/rate-limited | Let the provider cooldown expire; retry once later with a narrower query | Switch provider (`baidu` or `sogou` for Chinese-mainland oriented queries, `bing`/`duckduckgo` for broader queries); do not rapid-loop |
+| Frequent multi-round searches trigger rate-limiting | Increase search interval to ≥ 3 seconds; cache results with `-o` to avoid re-searching same terms | Deploy local SearXNG (one-time Docker start, persistent availability, 10x+ throughput) |
+| DDG persistently rate-limited AND no SearXNG/Docker | Wait 10-15 seconds, retry once with narrower terms, or use an explicitly configured search provider | Report the search limitation honestly; do not fabricate results |
+
+### Reader exceptions
+
+| Trigger | One-line fix | Still-fails fallback |
+|---------|-------------|---------------------|
+| `web-reader` exit=2 (404/file not found) | Verify URL spelling; check if login required | Report "source unreachable" honestly; take next URL from search results |
+| `web-reader` exit=3 (content extraction failed) | Use configured reader auto provider fallback if available; otherwise `--browser` force browser rendering | Search for alternative sources; cross-validate critical info from at least 2 independent sources |
+| `web-reader` exit=4 (engine unavailable) | `pip install 'markitdown[pdf,docx,pptx,xlsx]'` or `npm i -g agent-browser` | Pure-text URLs can still be read directly (no markitdown/agent-browser dependency) |
+| `quality.score == "low"` AND still low after `--browser` | Page may be navigation/landing/login-wall/anti-scraping | 🔴 Abandon this source; move to next URL in search results |
+| Cache returns stale content | `--no-cache` force refresh | Accept cache within TTL (300s), unless task is time-sensitive |
+| `--browser` needed but agent-browser not installed | `npm i -g agent-browser` (one-time install, persistent reuse) | Accept lower-quality plain-text result, but flag reduced confidence to user |
+
+### Dependency exceptions
+
+| Trigger | One-line fix | Still-fails fallback |
+|---------|-------------|---------------------|
+| `doctor` reports markitdown missing | `pip install 'markitdown[pdf,docx,pptx,xlsx]'` | PDF/DOCX/PPTX/XLSX files cannot be parsed; ask user for plain-text version |
+| `doctor` reports SearXNG unreachable | No action needed — `--provider auto` falls back to DuckDuckGo | If high-throughput search is needed, start SearXNG with Docker: see [SearXNG docs](https://docs.searxng.org/) |
+| DDG rate-limiting makes search unavailable | Wait 10-15 seconds, retry once, or use configured SearXNG / remote provider if available | Report current search unavailability honestly |
+
+> **Agent rule**: Reader failure ≠ source irrelevance. Failure only means "could not retrieve this time." Report honestly, preserve the URL, and let the user judge.
+
+## Agent Forbidden Actions
+
+> The following behaviors are **strictly prohibited**. Violating any item = output is untrustworthy.
+
+| # | Forbidden | Correct |
+|---|----------|---------|
+| 1 | **Silently swallow errors or fabricate results** — pretend success on network timeout / rate-limit / 404 | Report error type and exit code honestly; preserve URL for user judgment |
+| 2 | **Invent citations** — output URLs or content never actually searched/read | Only cite sources genuinely obtained through `web-search`/`web-reader` |
+| 3 | **Treat reader failure as "source has no relevant info"** | Failure only means "could not retrieve this time"; report honestly, preserve URL |
+| 4 | **Hide individual search/read errors** — skip silently and continue to next after failure | Report each call's success/failure status independently |
+| 5 | **Use `--browser` as the default for every URL** | `--browser` only when readability extraction fails or score=`"low"` |
+| 6 | **Hand-edit config.json** or **parse raw MCP responses** | CLI already wraps everything; use `--json` for standardized output |
+| 7 | **Print or fabricate API keys** | Keys read from environment variables only; config.json stores only `auth_env` variable name |
+| 8 | **Assume a combined `web-research` command exists** | Explicit step-by-step: `web-search` → select URL → `web-reader` → quality check → synthesize |
+| 9 | **Immediately re-search same term when rate-limited** | Wait 5–15 seconds; switch `--locale`/`--time-range` or use `--provider searxng` |
+| 10 | **Blindly use `--browser` on SSR-SPA pages** | If reader already returned >500 words of structured content, keep original — `--browser` adds chrome noise on SSR pages |
+| 11 | **Guess/construct URLs for `web-reader` without searching first** | Must `web-search` first to obtain real URLs; never fabricate URLs from memory |
 
 ## Configuration
 

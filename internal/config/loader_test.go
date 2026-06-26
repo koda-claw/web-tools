@@ -27,6 +27,9 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, []string{"builtin-reader"}, cfg.Reader.DefaultProviderChain)
 	assert.Contains(t, cfg.Providers, "searxng")
 	assert.Contains(t, cfg.Providers, "duckduckgo")
+	assert.Contains(t, cfg.Providers, "bing")
+	assert.Contains(t, cfg.Providers, "baidu")
+	assert.Contains(t, cfg.Providers, "sogou")
 	assert.Contains(t, cfg.Providers, "builtin-reader")
 }
 

@@ -26,6 +26,7 @@ type Search struct {
 	config    config.SearchConfig
 	providers map[string]config.ProviderConfig
 	cache     *searchCache
+	cooldowns *searchCooldowns
 }
 
 type searchCache struct {
@@ -89,10 +90,14 @@ func NewSearch(cfg config.SearchConfig) *Search {
 		engines: []Engine{
 			NewSearXNGEngine(cfg.SearXNGURL),
 			NewDuckDuckGoEngine(),
+			NewBingEngine(),
+			NewBaiduEngine(),
+			NewSogouEngine(),
 		},
 		config:    cfg,
 		providers: config.DefaultConfig().Providers,
 		cache:     defaultSearchCache,
+		cooldowns: defaultSearchCooldowns,
 	}
 }
 
@@ -102,10 +107,14 @@ func NewSearchWithConfig(cfg config.Config) *Search {
 		engines: []Engine{
 			NewSearXNGEngine(cfg.Search.SearXNGURL),
 			NewDuckDuckGoEngine(),
+			NewBingEngine(),
+			NewBaiduEngine(),
+			NewSogouEngine(),
 		},
 		config:    cfg.Search,
 		providers: cfg.Providers,
 		cache:     defaultSearchCache,
+		cooldowns: defaultSearchCooldowns,
 	}
 }
 
@@ -231,6 +240,15 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	)
 
 	for _, e := range candidates {
+		if remaining, ok := s.searchCooldowns().active(e.Name()); ok {
+			err := searchProviderCooldownError(e.Name(), remaining)
+			if engineName == "auto" {
+				fmt.Fprintf(os.Stderr, "[web-search] engine %s is cooling down for %s; trying next engine\n", e.Name(), remaining.Round(time.Second))
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
 		if err := e.HealthCheck(); err != nil {
 			if engineName == "auto" {
 				fmt.Fprintf(os.Stderr, "[web-search] engine %s unavailable: %v\n", e.Name(), err)
@@ -244,15 +262,20 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		if err != nil {
 			if engineName == "auto" {
 				if errors.Is(err, ErrRateLimited) {
-					fmt.Fprintf(os.Stderr, "[web-search] engine %s rate-limited; trying next engine\n", e.Name())
+					duration := s.searchCooldowns().mark(e.Name())
+					fmt.Fprintf(os.Stderr, "[web-search] engine %s rate-limited; cooling down for %s and trying next engine\n", e.Name(), duration.Round(time.Second))
 				} else {
 					fmt.Fprintf(os.Stderr, "[web-search] engine %s query failed: %v\n", e.Name(), err)
 				}
 				lastErr = err
 				continue
 			}
+			if errors.Is(err, ErrRateLimited) {
+				s.searchCooldowns().mark(e.Name())
+			}
 			return nil, err
 		}
+		s.searchCooldowns().clear(e.Name())
 
 		normalizedResults := normalizeResults(rawResults, e.Name(), opts)
 		if engineName == "auto" && len(normalizedResults) == 0 && len(candidates) > 1 {
@@ -356,6 +379,26 @@ func (s *Search) searchCache() *searchCache {
 		}
 	}
 	return s.cache
+}
+
+func (s *Search) searchCooldowns() *searchCooldowns {
+	if s.cooldowns == nil {
+		s.cooldowns = defaultSearchCooldowns
+	}
+	return s.cooldowns
+}
+
+func searchProviderCooldownError(engine string, remaining time.Duration) error {
+	return &RateLimitError{
+		Engine: engine,
+		Reason: "cooldown",
+		Err: apperrors.NewEngineError(
+			fmt.Sprintf("%s is cooling down after rate limit", engine),
+			fmt.Sprintf("retry after %s", remaining.Round(time.Second)),
+			map[string]string{"engine": engine, "retry_after": remaining.Round(time.Second).String()},
+			[]string{"wait before retrying this provider", "use --provider auto with another configured search provider"},
+		),
+	}
 }
 
 func (s *Search) cacheKey(query string, opts SearchOptions, engineName string, providerMode bool) string {

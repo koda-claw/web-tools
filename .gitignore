@@ -1,5 +1,5 @@
 # Build
-web-tools
+/web-tools
 *.exe
 *.exe~
 *.dll

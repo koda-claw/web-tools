@@ -39,6 +39,8 @@ func TestDoctorRun_AllOK(t *testing.T) {
 	assert.Equal(t, "/tmp/web-tools-test-cache", report.Config.Reader.CacheDir)
 	assert.Equal(t, StatusOK, findCheck(t, report, "provider.searxng").Status)
 	assert.Equal(t, StatusOK, findCheck(t, report, "provider.duckduckgo").Status)
+	assert.Equal(t, StatusOK, findCheck(t, report, "provider.bing").Status)
+	assert.Equal(t, StatusOK, findCheck(t, report, "provider.baidu").Status)
 	assert.Equal(t, StatusOK, findCheck(t, report, "provider.builtin-reader").Status)
 }
 

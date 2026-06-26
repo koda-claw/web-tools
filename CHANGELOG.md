@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.9.0 - 2026-06-26
+
+### Added
+
+- Built-in explicit `web-search` providers for Bing, Baidu, and Sogou via `--provider bing`, `--provider baidu`, and `--provider sogou`.
+- Parser and registry coverage for Bing/Baidu/Sogou while keeping the default no-key auto chain unchanged.
+- Bing/Baidu provider evaluation plan documenting live smoke gates, China network validation, and default-chain release criteria.
+- Polite request pacing and one conservative temporary-failure retry for Bing/Baidu/Sogou explicit providers.
+- Short in-process search provider cooldown after rate-limit/blocked responses, with automatic probe after cooldown expiry.
+- Reader auto provider-chain fallback from `builtin-reader` to configured MCP reader providers, including GUI smoke coverage.
+
+### Changed
+
+- Agent skill no longer recommends the experimental Python multi-source fallback path; search fallback guidance stays on the official `web-tools` CLI/provider surface.
+
 ## v1.8.0 - 2026-06-26
 
 ### Added

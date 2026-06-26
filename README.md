@@ -117,6 +117,11 @@ web-tools upgrade --only-skill
 ### 1. Search works out of the box
 
 `web-search` uses DuckDuckGo Lite by default and does not require Docker or API keys.
+It also includes explicit built-in Bing, Baidu, and Sogou providers for workflows that
+select them directly. Bing/Baidu/Sogou use browser-like request headers, per-provider
+request spacing, and one conservative retry for temporary 502/503/504 failures;
+captcha or rate-limit pages are returned as structured errors instead of being
+retried aggressively.
 
 SearXNG is optional for higher throughput and more sources:
 
@@ -144,6 +149,9 @@ web-tools web-search "latest AI news"
 web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 web-tools web-search "golang readability" --provider duckduckgo --json
+web-tools web-search "golang readability" --provider bing --json
+web-tools web-search "人工智能 最新进展" --provider baidu --json
+web-tools web-search "人工智能 最新进展" --provider sogou --json
 web-tools web-search "golang readability" --no-cache --json
 
 # Read a URL
@@ -214,7 +222,7 @@ web-tools gui
 web-tools gui --no-open --port 0
 ```
 
-The GUI binds to `127.0.0.1` by default. It can inspect setup readiness, configure the BigModel provider, write `~/.config/web-tools/.env`, run basic search/reader smoke tests, export non-sensitive diagnostics, and generate Agent handoff commands. It never displays or returns secret values; `config.json` stores only environment variable names such as `ZHIPU_APIKEY`.
+The GUI binds to `127.0.0.1` by default. It can inspect setup readiness, configure the BigModel provider, write `~/.config/web-tools/.env`, run basic search/reader smoke tests, export non-sensitive diagnostics, and generate Agent handoff commands. Search smoke tests can select the built-in `auto`, `duckduckgo`, `searxng`, `bing`, `baidu`, and `sogou` providers, plus configured providers such as `bigmodel`. It never displays or returns secret values; `config.json` stores only environment variable names such as `ZHIPU_APIKEY`.
 
 The GUI follows the browser language by default: Chinese browsers get Chinese UI, all other languages default to English. A language selector is available in the header.
 
@@ -261,15 +269,17 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
 
 CLI flags override config defaults when provided. `--format=html` is only available when extraction produced HTML; plain text and converted local files return a structured input error instead of generated wrapper HTML.
 
-`web-reader --json` includes a `quality` object with extraction score, word count, minimum word threshold, fallback recommendation, and reasons. Sparse extraction warnings are written to stderr so stdout remains machine-consumable.
+`web-reader --json` includes a `quality` object with extraction score, word count, minimum word threshold, fallback recommendation, and reasons. Sparse extraction warnings are written to stderr so stdout remains machine-consumable. When `reader.default_provider_chain` includes a configured MCP reader such as `["builtin-reader", "bigmodel"]`, `--provider auto` tries the next provider if the built-in reader returns empty/low-quality content or a fallback-eligible fetch/extraction error.
 
 `web-search` keeps a short in-process result cache to avoid duplicate backend requests in GUI and library-style usage. Use `--no-cache` to bypass it. The cache is not persisted to disk and does not store queries in metrics.
 
-DuckDuckGo Lite rate-limit or anti-bot responses are surfaced as structured engine errors and retried briefly before auto mode falls back to the next configured provider. Warnings stay on stderr so JSON stdout remains machine-consumable.
+DuckDuckGo Lite rate-limit or anti-bot responses are surfaced as structured engine errors and retried briefly before auto mode falls back to the next configured provider. Bing/Baidu/Sogou explicit providers also pace requests and retry only temporary gateway/service failures once; captcha, 403, and 429 responses are returned as structured errors. A provider that is rate-limited enters a short in-process cooldown, so auto/custom chains skip it temporarily and use the next provider. When the cooldown expires, the next request probes it normally and clears the cooldown on success. Warnings stay on stderr so JSON stdout remains machine-consumable.
 
 ### Provider configuration
 
 `--provider` is the preferred selector for new integrations. `--engine` remains supported for compatibility with `auto`, `duckduckgo`, and `searxng`.
+Built-in search providers are `searxng`, `duckduckgo`, `bing`, `baidu`, and `sogou`.
+Bing, Baidu, and Sogou are explicit providers; the default auto chain remains unchanged.
 
 The default no-key path stays local-first:
 
@@ -301,6 +311,17 @@ web-tools setup \
   --auth-env ZHIPU_APIKEY \
   --enable-search-auto
 ```
+
+To include BigModel in `web-reader --provider auto` fallback:
+
+```bash
+web-tools setup \
+  --provider bigmodel \
+  --auth-env ZHIPU_APIKEY \
+  --enable-reader-auto
+```
+
+Reader provider fallback is a recovery path for sparse extraction, JS-heavy pages, and some anti-bot HTTP failures. It does not bypass login, captcha, paywalls, or authorization requirements; preserve the URL and report those limits honestly.
 
 `web-tools setup` installs or updates the Agent skill, writes provider config
 when requested, optionally writes an env file, and runs `doctor`. The config

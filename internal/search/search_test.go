@@ -174,6 +174,7 @@ func makeConfiguredTestSearch(cfg config.SearchConfig, engines ...Engine) *Searc
 		config:    cfg,
 		providers: config.DefaultConfig().Providers,
 		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
 	}
 }
 
@@ -189,6 +190,7 @@ func makeTestSearch(engines ...Engine) *Search {
 		},
 		providers: config.DefaultConfig().Providers,
 		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
 	}
 }
 
@@ -295,6 +297,84 @@ func TestAutoMode_FallsBackOnRateLimitError(t *testing.T) {
 	assert.Equal(t, "duckduckgo", resp.Engine)
 	require.Len(t, resp.Results, 1)
 	assert.Equal(t, "DDG Result", resp.Results[0].Title)
+}
+
+func TestAutoModeSkipsCoolingProviderAndProbesAfterCooldown(t *testing.T) {
+	now := time.Date(2026, 6, 26, 8, 0, 0, 0, time.UTC)
+	cooldowns := newSearchCooldowns(time.Minute)
+	cooldowns.now = func() time.Time { return now }
+	baidu := &mockEngine{
+		name:     "baidu",
+		queryErr: &RateLimitError{Engine: "baidu", Reason: "rate_limited"},
+	}
+	ddg := &mockEngine{name: "duckduckgo", queryResult: []RawResult{
+		{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+	}}
+	cfg := config.DefaultConfig()
+	cfg.Search.DefaultProviderChain = []string{"baidu", "duckduckgo"}
+	s := &Search{
+		engines:   []Engine{baidu, ddg},
+		config:    cfg.Search,
+		providers: cfg.Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: cooldowns,
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "auto", NoCache: true})
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Equal(t, 1, baidu.queryCount)
+	assert.Equal(t, 1, ddg.queryCount)
+
+	resp, err = s.Do("test", SearchOptions{Provider: "auto", NoCache: true})
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Equal(t, 1, baidu.queryCount, "cooling provider should be skipped before probe window")
+	assert.Equal(t, 2, ddg.queryCount)
+
+	now = now.Add(time.Minute + time.Second)
+	baidu.queryErr = nil
+	baidu.queryResult = []RawResult{{Title: "Baidu Result", URL: "https://example.cn", Snippet: "snippet", Source: "example.cn"}}
+	resp, err = s.Do("test", SearchOptions{Provider: "auto", NoCache: true})
+	require.NoError(t, err)
+	assert.Equal(t, "baidu", resp.Engine)
+	assert.Equal(t, 2, baidu.queryCount, "expired cooldown should allow a probe")
+	assert.Equal(t, 2, ddg.queryCount)
+}
+
+func TestExplicitCoolingProviderReturnsCooldownErrorUntilProbeWindow(t *testing.T) {
+	now := time.Date(2026, 6, 26, 8, 0, 0, 0, time.UTC)
+	cooldowns := newSearchCooldowns(time.Minute)
+	cooldowns.now = func() time.Time { return now }
+	baidu := &mockEngine{
+		name:     "baidu",
+		queryErr: &RateLimitError{Engine: "baidu", Reason: "rate_limited"},
+	}
+	s := &Search{
+		engines:   []Engine{baidu},
+		config:    config.DefaultConfig().Search,
+		providers: config.DefaultConfig().Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: cooldowns,
+	}
+
+	_, err := s.Do("test", SearchOptions{Provider: "baidu", NoCache: true})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrRateLimited))
+	assert.Equal(t, 1, baidu.queryCount)
+
+	_, err = s.Do("test", SearchOptions{Provider: "baidu", NoCache: true})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cooling down")
+	assert.Equal(t, 1, baidu.queryCount)
+
+	now = now.Add(time.Minute + time.Second)
+	baidu.queryErr = nil
+	baidu.queryResult = []RawResult{{Title: "Baidu Result", URL: "https://example.cn", Snippet: "snippet", Source: "example.cn"}}
+	resp, err := s.Do("test", SearchOptions{Provider: "baidu", NoCache: true})
+	require.NoError(t, err)
+	assert.Equal(t, "baidu", resp.Engine)
+	assert.Equal(t, 2, baidu.queryCount)
 }
 
 // TestSpecificEngine_SearXNG verifies that --engine searxng skips DDG entirely.
@@ -466,6 +546,63 @@ func TestSearchProviderOptionSelectsEngine(t *testing.T) {
 	assert.Equal(t, "duckduckgo", resp.Provider)
 }
 
+func TestSearchExplicitBuiltinProviderBaidu(t *testing.T) {
+	baidu := &mockEngine{
+		name: "baidu",
+		queryResult: []RawResult{
+			{Title: "Baidu Result", URL: "https://example.cn", Snippet: "snippet", Source: "example.cn"},
+		},
+	}
+	s := &Search{
+		engines: []Engine{
+			&mockEngine{name: "searxng", healthErr: errors.New("should not be called")},
+			&mockEngine{name: "duckduckgo", healthErr: errors.New("should not be called")},
+			baidu,
+		},
+		config:    config.DefaultConfig().Search,
+		providers: config.DefaultConfig().Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "baidu"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "baidu", resp.Engine)
+	assert.Equal(t, "baidu", resp.Provider)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "Baidu Result", resp.Results[0].Title)
+	assert.Equal(t, 5, baidu.lastOpts.Limit)
+}
+
+func TestSearchDefaultProviderChainDoesNotIncludeExplicitDomesticProviders(t *testing.T) {
+	cfg := config.DefaultConfig()
+	searxng := &mockEngine{name: "searxng", queryResult: nil}
+	ddg := &mockEngine{name: "duckduckgo", queryResult: []RawResult{
+		{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+	}}
+	bing := &mockEngine{name: "bing", queryErr: errors.New("should not be called")}
+	baidu := &mockEngine{name: "baidu", queryErr: errors.New("should not be called")}
+	sogou := &mockEngine{name: "sogou", queryErr: errors.New("should not be called")}
+	s := &Search{
+		engines:   []Engine{searxng, ddg, bing, baidu, sogou},
+		config:    cfg.Search,
+		providers: cfg.Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
+	}
+
+	resp, err := s.Do("test", SearchOptions{Provider: "auto"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	assert.Equal(t, 1, searxng.queryCount)
+	assert.Equal(t, 1, ddg.queryCount)
+	assert.Equal(t, 0, bing.queryCount)
+	assert.Equal(t, 0, baidu.queryCount)
+	assert.Equal(t, 0, sogou.queryCount)
+}
+
 func TestSearchProviderChainSkipsUnconfiguredRemoteProvider(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Search.DefaultProviderChain = []string{"searxng", "bigmodel", "duckduckgo"}
@@ -488,6 +625,8 @@ func TestSearchProviderChainSkipsUnconfiguredRemoteProvider(t *testing.T) {
 		},
 		config:    cfg.Search,
 		providers: cfg.Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
 	}
 
 	resp, err := s.Do("test", SearchOptions{Provider: "auto"})
@@ -544,6 +683,8 @@ func TestSearchProviderChainUsesConfiguredMCPProvider(t *testing.T) {
 		},
 		config:    cfg.Search,
 		providers: cfg.Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
 	}
 
 	resp, err := s.Do("test", SearchOptions{Provider: "auto"})
@@ -592,6 +733,8 @@ func TestSearchExplicitMCPProvider(t *testing.T) {
 	s := &Search{
 		config:    cfg.Search,
 		providers: cfg.Providers,
+		cache:     newTestSearchCache(),
+		cooldowns: newSearchCooldowns(time.Minute),
 	}
 
 	resp, err := s.Do("test", SearchOptions{Provider: "bigmodel"})

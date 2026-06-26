@@ -30,13 +30,17 @@ func Cmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "web-search <query>",
-		Short: "Search the web (DuckDuckGo Lite by default, SearXNG optional)",
-		Long: `Search the web using DuckDuckGo Lite (default, zero dependencies) or a local SearXNG
-instance (opt-in, requires Docker). Zero cost, no API keys.`,
+		Short: "Search the web (auto defaults to SearXNG/DuckDuckGo; extra providers explicit)",
+		Long: `Search the web using the default auto chain (SearXNG when available, then
+DuckDuckGo Lite) or an explicit provider. Bing, Baidu, and Sogou are built-in explicit
+providers; they are not part of the default auto fallback chain unless configured.`,
 		Example: `  web-tools web-search "latest AI news"
   web-tools web-search "AI latest developments" --locale en-US --time-range week
   web-tools web-search "Tesla" --category news --time-range day --limit 10
   web-tools web-search "site:github.com go readability" --limit 3 --json
+  web-tools web-search "golang readability" --provider bing --json
+  web-tools web-search "人工智能 最新进展" --provider baidu --json
+  web-tools web-search "人工智能 最新进展" --provider sogou --json
   web-tools web-search "deep learning" --locale en-US --limit 3 -o /tmp/results.md
   web-tools web-search "climate change 2026" --time-range year --json`,
 		Args: cobra.ExactArgs(1),
@@ -49,7 +53,7 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 	cmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output to file")
 	cmd.Flags().IntVarP(&flagLimit, "limit", "n", 5, "Number of results")
 	cmd.Flags().StringVar(&flagEngine, "engine", "auto", "Search engine: auto / duckduckgo / searxng")
-	cmd.Flags().StringVar(&flagProvider, "provider", "auto", "Search provider: auto / duckduckgo / searxng")
+	cmd.Flags().StringVar(&flagProvider, "provider", "auto", "Search provider: auto / duckduckgo / searxng / bing / baidu / sogou")
 	cmd.Flags().StringVar(&flagLocale, "locale", "auto", "Language preference (zh-CN, en-US, auto)")
 	cmd.Flags().StringVar(&flagCat, "category", "general", "Search category: general / images / news / videos / files")
 	cmd.Flags().StringVar(&flagTime, "time-range", "any", "Time range: any / day / week / month / year")

@@ -3,6 +3,7 @@ package webreader
 import (
 	jsonpkg "encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -96,33 +97,29 @@ func TestValidateReaderProviderRemoteMissingAuth(t *testing.T) {
 	assert.Contains(t, err.Error(), "provider auth is not configured")
 }
 
+func TestSelectReaderProvidersAutoKeepsConfiguredChain(t *testing.T) {
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	cfg := config.DefaultConfig()
+	cfg.Providers["bigmodel"] = config.ProviderConfig{
+		Type:         "mcp",
+		AuthEnv:      "ZHIPU_APIKEY",
+		Capabilities: []string{"reader"},
+		Reader:       &config.ProviderEndpointConfig{URL: "https://example.com/mcp", Tool: "webReader"},
+	}
+	cfg.Reader.DefaultProviderChain = []string{"builtin-reader", "bigmodel"}
+
+	selection, err := selectReaderProviders(cfg, "auto")
+
+	require.NoError(t, err)
+	require.Len(t, selection.providers, 2)
+	assert.True(t, selection.auto)
+	assert.Equal(t, "builtin-reader", selection.providers[0].ID)
+	assert.Equal(t, "bigmodel", selection.providers[1].ID)
+}
+
 func TestHandleProviderURLInputMCP(t *testing.T) {
 	t.Setenv("ZHIPU_APIKEY", "test-token")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
-		var req map[string]any
-		require.NoError(t, jsonpkg.NewDecoder(r.Body).Decode(&req))
-		switch req["method"] {
-		case "initialize":
-			w.Header().Set("Mcp-Session-Id", "test-session")
-			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
-		case "notifications/initialized":
-			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
-		case "tools/call":
-			text, _ := jsonpkg.Marshal(`{"title":"Example","url":"https://example.com","content":"Provider body","metadata":{"site":"example"}}`)
-			payload, _ := jsonpkg.Marshal(map[string]any{
-				"jsonrpc": "2.0",
-				"id":      3,
-				"result": map[string]any{
-					"content": []map[string]any{{"type": "text", "text": string(text)}},
-					"isError": false,
-				},
-			})
-			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
-		default:
-			t.Fatalf("unexpected method %v", req["method"])
-		}
-	}))
+	server := newMCPReaderServer(t, `{"title":"Example","url":"https://example.com","content":"Provider body","metadata":{"site":"example"}}`)
 	defer server.Close()
 	input, err := reader.ParseInput("https://example.com")
 	require.NoError(t, err)
@@ -141,6 +138,55 @@ func TestHandleProviderURLInputMCP(t *testing.T) {
 	assert.Equal(t, "Provider body", result.Content)
 	assert.Equal(t, "bigmodel", result.Metadata["provider"])
 	assert.Equal(t, "provider:bigmodel", result.ExtractMode)
+}
+
+func TestHandleURLInputWithProvidersFallsBackFromLowQualityBuiltinToMCP(t *testing.T) {
+	t.Setenv("ZHIPU_APIKEY", "test-token")
+	oldStderr := stderr
+	stderrReader, stderrWriter, err := os.Pipe()
+	require.NoError(t, err)
+	stderr = stderrWriter
+	t.Cleanup(func() {
+		stderr = oldStderr
+		_ = stderrWriter.Close()
+		_ = stderrReader.Close()
+	})
+
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><head><title>Sparse</title></head><body><main><p>tiny</p></main></body></html>`))
+	}))
+	defer page.Close()
+	mcp := newMCPReaderServer(t, `{"title":"Provider Article","url":"https://example.com/provider","content":"Provider body has enough words for fallback success","metadata":{"site":"provider"}}`)
+	defer mcp.Close()
+
+	cfg := config.DefaultConfig()
+	cfg.Reader.MinContentLength = 3
+	cfg.Reader.BrowserFallback = false
+	input, err := reader.ParseInput(page.URL)
+	require.NoError(t, err)
+	selection := readerProviderSelection{
+		auto: true,
+		providers: []provider.Provider{
+			{ID: "builtin-reader", Config: config.ProviderConfig{Type: "builtin", Capabilities: []string{"reader"}}},
+			{ID: "bigmodel", Config: config.ProviderConfig{
+				Type:    "mcp",
+				AuthEnv: "ZHIPU_APIKEY",
+				Reader:  &config.ProviderEndpointConfig{URL: mcp.URL, Tool: "webReader"},
+			}},
+		},
+	}
+
+	result, err := handleURLInputWithProviders(input, cfg, selection, "", nil, true, false, "", "main", "markdown")
+	require.NoError(t, err)
+	assert.Equal(t, "Provider Article", result.Title)
+	assert.Equal(t, "provider:bigmodel", result.ExtractMode)
+
+	require.NoError(t, stderrWriter.Close())
+	warnings, err := io.ReadAll(stderrReader)
+	require.NoError(t, err)
+	assert.Contains(t, string(warnings), "reader provider builtin-reader returned")
+	assert.Contains(t, string(warnings), "trying bigmodel")
 }
 
 func TestPipelineResultRenderers(t *testing.T) {
@@ -263,4 +309,33 @@ func TestIsHTTPStatusError(t *testing.T) {
 		nil,
 		nil,
 	)))
+}
+
+func newMCPReaderServer(t *testing.T, readerPayload string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream;charset=UTF-8")
+		var req map[string]any
+		require.NoError(t, jsonpkg.NewDecoder(r.Body).Decode(&req))
+		switch req["method"] {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{\"listChanged\":true}},\"serverInfo\":{\"name\":\"mock\",\"version\":\"0.0.1\"}}}\n\n")
+		case "notifications/initialized":
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:{\"jsonrpc\":\"2.0\",\"result\":{}}\n\n")
+		case "tools/call":
+			text, _ := jsonpkg.Marshal(readerPayload)
+			payload, _ := jsonpkg.Marshal(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      3,
+				"result": map[string]any{
+					"content": []map[string]any{{"type": "text", "text": string(text)}},
+					"isError": false,
+				},
+			})
+			fmt.Fprintf(w, "id:1\nevent:message\ndata:%s\n\n", payload)
+		default:
+			t.Fatalf("unexpected method %v", req["method"])
+		}
+	}))
 }

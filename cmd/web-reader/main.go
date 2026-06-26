@@ -17,6 +17,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var stderr = os.Stderr
+
 func Cmd() *cobra.Command {
 	var (
 		flagJSON     bool
@@ -36,10 +38,14 @@ func Cmd() *cobra.Command {
 		Use:   "web-reader <input>",
 		Short: "Extract readable content from URL or local file",
 		Long: `Fetch a URL or read a local file, extract the main content, and output as Markdown.
-Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
+Supports web pages, PDFs, Word, PowerPoint, Excel, and text files. When reader
+auto is configured with a provider chain, sparse builtin extraction can fall
+back to the next configured MCP reader provider.`,
 		Example: `  web-tools web-reader https://example.com/article
   web-tools web-reader https://example.com/article --max-words 100
   web-tools web-reader https://example.com/article --json
+  web-tools web-reader https://example.com/article --provider auto --json --no-cache
+  web-tools web-reader https://example.com/article --provider bigmodel --json
   web-tools web-reader https://spa-site.com/page --browser
   web-tools web-reader https://internal.company.com/doc --session work
   web-tools web-reader ./report.pdf
@@ -61,7 +67,7 @@ Supports web pages, PDFs, Word, PowerPoint, Excel, and text files.`,
 	cmd.Flags().StringVar(&flagSession, "session", "", "agent-browser session name for login state")
 	cmd.Flags().StringVar(&flagUA, "user-agent", "", "Custom User-Agent")
 	cmd.Flags().StringVar(&flagFormat, "format", "markdown", "Output format: markdown / text / html")
-	cmd.Flags().StringVar(&flagProvider, "provider", "auto", "Reader provider: auto / builtin-reader")
+	cmd.Flags().StringVar(&flagProvider, "provider", "auto", "Reader provider: auto / builtin-reader / configured MCP provider id")
 
 	return cmd
 }
@@ -145,12 +151,11 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 		)
 		apperrors.HandleError(runErr)
 	}
-	selectedProvider, err := selectReaderProvider(cfg, flagProvider)
+	selection, err := selectReaderProviders(cfg, flagProvider)
 	if err != nil {
 		runErr = err
 		apperrors.HandleError(runErr)
 	}
-	metric.Provider = selectedProvider.ID
 
 	// 3. Initialize cache (URL inputs only)
 	var cache *reader.Cache
@@ -160,6 +165,8 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 
 	// 4. Handle file inputs
 	if input.Type == reader.InputFile {
+		selectedProvider := selection.providers[0]
+		metric.Provider = selectedProvider.ID
 		if selectedProvider.ID != "builtin-reader" {
 			runErr = apperrors.NewInputError(
 				"reader provider only supports URL input",
@@ -182,16 +189,12 @@ func run(rawInput string, flagJSON bool, flagOutput string, flagExtract string, 
 	}
 
 	// 5. Handle URL inputs
-	var result *PipelineResult
-	if selectedProvider.ID == "builtin-reader" {
-		result, err = handleURLInput(input, cfg, flagUA, cache, flagNoCache, flagBrowser, flagSession, flagExtract, flagFormat)
-	} else {
-		result, err = handleProviderURLInput(input, cfg, selectedProvider, flagFormat)
-	}
+	result, err := handleURLInputWithProviders(input, cfg, selection, flagUA, cache, flagNoCache, flagBrowser, flagSession, flagExtract, flagFormat)
 	if err != nil {
 		runErr = err
 		apperrors.HandleError(runErr)
 	}
+	metric.Provider = readerResultProvider(result)
 
 	// 6. Check extraction quality
 	if result.NeedsFallback {
@@ -224,12 +227,32 @@ func applyReaderMetrics(event *metrics.Event, result *PipelineResult) {
 	}
 }
 
+func readerResultProvider(result *PipelineResult) string {
+	if result == nil {
+		return ""
+	}
+	if result.Metadata != nil {
+		if providerID := result.Metadata["provider"]; providerID != "" {
+			return providerID
+		}
+	}
+	if strings.HasPrefix(result.ExtractMode, "provider:") {
+		return strings.TrimPrefix(result.ExtractMode, "provider:")
+	}
+	return "builtin-reader"
+}
+
 func validateReaderProvider(cfg config.Config, requested string) error {
-	_, err := selectReaderProvider(cfg, requested)
+	_, err := selectReaderProviders(cfg, requested)
 	return err
 }
 
-func selectReaderProvider(cfg config.Config, requested string) (provider.Provider, error) {
+type readerProviderSelection struct {
+	providers []provider.Provider
+	auto      bool
+}
+
+func selectReaderProviders(cfg config.Config, requested string) (readerProviderSelection, error) {
 	if requested == "" {
 		requested = cfg.Reader.DefaultProvider
 	}
@@ -238,7 +261,7 @@ func selectReaderProvider(cfg config.Config, requested string) (provider.Provide
 	}
 	reg, err := provider.NewRegistry(cfg.Providers)
 	if err != nil {
-		return provider.Provider{}, err
+		return readerProviderSelection{}, err
 	}
 	switch requested {
 	case "auto":
@@ -248,32 +271,77 @@ func selectReaderProvider(cfg config.Config, requested string) (provider.Provide
 		}
 		providers, _, err := reg.ResolveChain(chain, provider.CapabilityReader)
 		if err != nil {
-			return provider.Provider{}, err
+			return readerProviderSelection{}, err
 		}
 		if len(providers) > 0 {
-			return providers[0], nil
+			return readerProviderSelection{providers: providers, auto: true}, nil
 		}
-		return provider.Provider{}, apperrors.NewInputError(
+		return readerProviderSelection{}, apperrors.NewInputError(
 			"no reader providers available",
 			"reader auto chain did not resolve to any enabled reader providers",
 			[]string{"check reader.default_provider_chain", "configure provider auth envs"},
 		)
 	case "builtin-reader":
-		return reg.Get("builtin-reader", provider.CapabilityReader)
+		selected, err := reg.Get("builtin-reader", provider.CapabilityReader)
+		if err != nil {
+			return readerProviderSelection{}, err
+		}
+		return readerProviderSelection{providers: []provider.Provider{selected}}, nil
 	default:
 		selected, err := reg.Get(requested, provider.CapabilityReader)
 		if err != nil {
-			return provider.Provider{}, err
+			return readerProviderSelection{}, err
 		}
 		if selected.Config.Type != "mcp" {
-			return provider.Provider{}, apperrors.NewInputError(
+			return readerProviderSelection{}, apperrors.NewInputError(
 				"reader provider is not implemented yet",
 				fmt.Sprintf("provider %q uses unsupported type %q", requested, selected.Config.Type),
 				[]string{"use --provider builtin-reader", "use a provider with type mcp"},
 			)
 		}
-		return selected, nil
+		return readerProviderSelection{providers: []provider.Provider{selected}}, nil
 	}
+}
+
+func handleURLInputWithProviders(input *reader.Input, cfg config.Config, selection readerProviderSelection, customUA string, cache *reader.Cache, noCache bool, useBrowser bool, session string, extractMode string, format string) (*PipelineResult, error) {
+	var lastErr error
+	var lastLowQuality *PipelineResult
+	for idx, selected := range selection.providers {
+		result, err := handleURLInputWithProvider(input, cfg, selected, customUA, cache, noCache, useBrowser, session, extractMode, format)
+		if err != nil {
+			lastErr = err
+			if selection.auto && idx < len(selection.providers)-1 && reader.ShouldProviderFallbackError(err) {
+				fmt.Fprintf(stderr, "[WARN] reader provider %s failed (%v), trying %s\n", selected.ID, err, selection.providers[idx+1].ID)
+				continue
+			}
+			return nil, err
+		}
+		if selection.auto && idx < len(selection.providers)-1 && shouldFallbackReaderResult(result) {
+			lastLowQuality = result
+			reason := "low quality"
+			if result.Quality != nil && len(result.Quality.Reasons) > 0 {
+				reason = strings.Join(result.Quality.Reasons, ", ")
+			}
+			fmt.Fprintf(stderr, "[WARN] reader provider %s returned %s; trying %s\n", selected.ID, reason, selection.providers[idx+1].ID)
+			continue
+		}
+		return result, nil
+	}
+	if lastLowQuality != nil {
+		return lastLowQuality, nil
+	}
+	return nil, lastErr
+}
+
+func handleURLInputWithProvider(input *reader.Input, cfg config.Config, selected provider.Provider, customUA string, cache *reader.Cache, noCache bool, useBrowser bool, session string, extractMode string, format string) (*PipelineResult, error) {
+	if selected.ID == "builtin-reader" {
+		return handleURLInput(input, cfg, customUA, cache, noCache, useBrowser, session, extractMode, format)
+	}
+	return handleProviderURLInput(input, cfg, selected, format)
+}
+
+func shouldFallbackReaderResult(result *PipelineResult) bool {
+	return result != nil && result.NeedsFallback
 }
 
 func handleProviderURLInput(input *reader.Input, cfg config.Config, selected provider.Provider, format string) (*PipelineResult, error) {
@@ -361,7 +429,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 	if cache != nil && !noCache && !useBrowser {
 		entry, content, hit := cache.Get(input.URL.String())
 		if hit {
-			fmt.Fprintln(os.Stderr, "[CACHE HIT] "+input.URL.String())
+			fmt.Fprintln(stderr, "[CACHE HIT] "+input.URL.String())
 			return &PipelineResult{
 				Source:      entry.URL,
 				Title:       "",
@@ -396,7 +464,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 		}
 		// Network errors (timeout, DNS, connection refused): try browser
 		if cfg.Reader.BrowserFallback {
-			fmt.Fprintf(os.Stderr, "[WARN] HTTP fetch failed (%v), trying browser fallback\n", err)
+			fmt.Fprintf(stderr, "[WARN] HTTP fetch failed (%v), trying browser fallback\n", err)
 			return handleBrowserInput(input, cfg, session, extractMode, format)
 		}
 		return nil, err
@@ -408,7 +476,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 	if err != nil {
 		// Extraction failure: browser can help with JS-rendered pages
 		if cfg.Reader.BrowserFallback {
-			fmt.Fprintf(os.Stderr, "[WARN] extraction failed (%v), trying browser fallback\n", err)
+			fmt.Fprintf(stderr, "[WARN] extraction failed (%v), trying browser fallback\n", err)
 			return handleBrowserInput(input, cfg, session, extractMode, format)
 		}
 		return nil, err
@@ -449,7 +517,7 @@ func handleURLInput(input *reader.Input, cfg config.Config, customUA string, cac
 			ContentType: fetchResult.ContentType,
 		}
 		if err := cache.Set(input.URL.String(), cacheEntry, extractResult.Content); err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] cache write failed: %v\n", err)
+			fmt.Fprintf(stderr, "[WARN] cache write failed: %v\n", err)
 		}
 	}
 

@@ -353,3 +353,47 @@ func textContent(n *html.Node) string {
 	}
 	return sb.String()
 }
+
+func firstDescendant(n *html.Node, match func(*html.Node) bool) *html.Node {
+	if n == nil || match == nil {
+		return nil
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if match(c) {
+			return c
+		}
+		if found := firstDescendant(c, match); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func nearestAncestor(n *html.Node, element string) *html.Node {
+	if n == nil {
+		return nil
+	}
+	for p := n.Parent; p != nil; p = p.Parent {
+		if p.Type == html.ElementNode && p.Data == element {
+			return p
+		}
+	}
+	return nil
+}
+
+func textContentExcluding(n *html.Node, exclude func(*html.Node) bool) string {
+	if n == nil {
+		return ""
+	}
+	if exclude != nil && exclude(n) {
+		return ""
+	}
+	if n.Type == html.TextNode {
+		return n.Data
+	}
+	var sb strings.Builder
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		sb.WriteString(textContentExcluding(c, exclude))
+	}
+	return sb.String()
+}
