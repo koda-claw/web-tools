@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.8.0 - 2026-06-26
+
+### Added
+
+- In-process `web-search` result cache with `--no-cache` bypass.
+- DuckDuckGo Lite rate-limit detection with typed fallback semantics.
+
+### Improved
+
+- DuckDuckGo Lite rate-limit and anti-bot responses now retry briefly before returning an engine error or allowing auto/provider fallback.
+- Search resilience iteration plan for #2/#3, including why Brave/Mojeek are out of scope and Startpage remains a gated follow-up.
+
 ## v1.7.0 - 2026-06-16
 
 Feature work for local metrics and GUI observability.

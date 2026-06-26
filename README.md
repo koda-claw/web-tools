@@ -144,6 +144,7 @@ web-tools web-search "latest AI news"
 web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 web-tools web-search "golang readability" --provider duckduckgo --json
+web-tools web-search "golang readability" --no-cache --json
 
 # Read a URL
 web-tools web-reader https://example.com/article
@@ -261,6 +262,10 @@ Config file (optional): `~/.config/web-tools/config.json` or `./web-tools.json`
 CLI flags override config defaults when provided. `--format=html` is only available when extraction produced HTML; plain text and converted local files return a structured input error instead of generated wrapper HTML.
 
 `web-reader --json` includes a `quality` object with extraction score, word count, minimum word threshold, fallback recommendation, and reasons. Sparse extraction warnings are written to stderr so stdout remains machine-consumable.
+
+`web-search` keeps a short in-process result cache to avoid duplicate backend requests in GUI and library-style usage. Use `--no-cache` to bypass it. The cache is not persisted to disk and does not store queries in metrics.
+
+DuckDuckGo Lite rate-limit or anti-bot responses are surfaced as structured engine errors and retried briefly before auto mode falls back to the next configured provider. Warnings stay on stderr so JSON stdout remains machine-consumable.
 
 ### Provider configuration
 

@@ -145,6 +145,7 @@ web-tools web-search "latest AI news"
 web-tools web-search "AI latest developments" --locale en-US --limit 3
 web-tools web-search "golang readability" --include-domain github.com --exclude-domain reddit.com
 web-tools web-search "golang readability" --provider duckduckgo --json
+web-tools web-search "golang readability" --no-cache --json
 
 # 读取 URL
 web-tools web-reader https://example.com/article
@@ -258,6 +259,10 @@ web-tools skill install --force
 CLI 参数会覆盖配置默认值。`--format=html` 只在提取结果里真的有 HTML 时可用；纯文本和本地转换文件不会被包装成假的 HTML，而是返回结构化 input error。
 
 `web-reader --json` 包含 `quality` 对象，包括提取评分、词数、最低词数阈值、是否建议 fallback 和原因。内容稀疏 warning 会写到 stderr，stdout 保持机器可读。
+
+`web-search` 会保留短生命周期的进程内结果缓存，减少 GUI 或库调用场景里的重复后端请求。使用 `--no-cache` 可以绕过缓存。缓存不会持久化到磁盘，metrics 也不会记录 query。
+
+DuckDuckGo Lite 的限流或反爬响应会返回结构化 engine error，并在 auto 模式 fallback 到下一个 provider 前做短重试。warning 只写 stderr，JSON stdout 保持机器可读。
 
 ### Provider 配置
 

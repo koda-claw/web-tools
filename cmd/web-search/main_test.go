@@ -20,7 +20,7 @@ func TestLoadSearchConfig_UsesEnvOverrideForSearXNGURL(t *testing.T) {
 func TestBuildSearchOptions_OmittedFlagsStayZero(t *testing.T) {
 	cmd := Cmd()
 
-	opts, err := buildSearchOptions(cmd, 5, "auto", "auto", "auto", "general", "any", nil, nil)
+	opts, err := buildSearchOptions(cmd, 5, "auto", "auto", "auto", "general", "any", false, nil, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, search.SearchOptions{}, opts)
@@ -34,10 +34,11 @@ func TestBuildSearchOptions_ExplicitFlagsOverride(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("locale", "en-US"))
 	require.NoError(t, cmd.Flags().Set("category", "news"))
 	require.NoError(t, cmd.Flags().Set("time-range", "week"))
+	require.NoError(t, cmd.Flags().Set("no-cache", "true"))
 	require.NoError(t, cmd.Flags().Set("include-domain", "example.com,docs.example.com"))
 	require.NoError(t, cmd.Flags().Set("exclude-domain", "spam.example"))
 
-	opts, err := buildSearchOptions(cmd, 2, "searxng", "searxng", "en-US", "news", "week", []string{"example.com", "docs.example.com"}, []string{"spam.example"})
+	opts, err := buildSearchOptions(cmd, 2, "searxng", "searxng", "en-US", "news", "week", true, []string{"example.com", "docs.example.com"}, []string{"spam.example"})
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, opts.Limit)
@@ -46,6 +47,7 @@ func TestBuildSearchOptions_ExplicitFlagsOverride(t *testing.T) {
 	assert.Equal(t, "en-US", opts.Locale)
 	assert.Equal(t, "news", opts.Category)
 	assert.Equal(t, "week", opts.TimeRange)
+	assert.True(t, opts.NoCache)
 	assert.Equal(t, []string{"example.com", "docs.example.com"}, opts.IncludeDomains)
 	assert.Equal(t, []string{"spam.example"}, opts.ExcludeDomains)
 }
@@ -54,7 +56,7 @@ func TestBuildSearchOptions_ProviderWithoutEngine(t *testing.T) {
 	cmd := Cmd()
 	require.NoError(t, cmd.Flags().Set("provider", "duckduckgo"))
 
-	opts, err := buildSearchOptions(cmd, 5, "auto", "duckduckgo", "auto", "general", "any", nil, nil)
+	opts, err := buildSearchOptions(cmd, 5, "auto", "duckduckgo", "auto", "general", "any", false, nil, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, "duckduckgo", opts.Provider)
@@ -66,7 +68,7 @@ func TestBuildSearchOptions_ConflictingEngineAndProvider(t *testing.T) {
 	require.NoError(t, cmd.Flags().Set("engine", "searxng"))
 	require.NoError(t, cmd.Flags().Set("provider", "duckduckgo"))
 
-	_, err := buildSearchOptions(cmd, 5, "searxng", "duckduckgo", "auto", "general", "any", nil, nil)
+	_, err := buildSearchOptions(cmd, 5, "searxng", "duckduckgo", "auto", "general", "any", false, nil, nil)
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "conflicting provider flags")

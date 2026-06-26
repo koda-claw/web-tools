@@ -2,13 +2,16 @@ package search
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/koda-claw/web-tools/internal/config"
@@ -22,6 +25,23 @@ type Search struct {
 	engines   []Engine
 	config    config.SearchConfig
 	providers map[string]config.ProviderConfig
+	cache     *searchCache
+}
+
+type searchCache struct {
+	mu       sync.Mutex
+	entries  map[string]searchCacheEntry
+	cacheTTL time.Duration
+}
+
+type searchCacheEntry struct {
+	response *SearchResponse
+	cachedAt time.Time
+}
+
+var defaultSearchCache = &searchCache{
+	entries:  make(map[string]searchCacheEntry),
+	cacheTTL: time.Duration(config.DefaultCacheTTL) * time.Second,
 }
 
 // SearchOptions holds user-facing search options.
@@ -32,6 +52,7 @@ type SearchOptions struct {
 	TimeRange string // "" / "any" / "day" / "week" / "month" / "year"
 	Engine    string // "auto" / "duckduckgo" / "searxng"
 	Provider  string // "auto" / provider id
+	NoCache   bool
 	// IncludeDomains and ExcludeDomains filter normalized result hostnames.
 	// A filter value matches the exact domain and any subdomain.
 	IncludeDomains []string
@@ -71,6 +92,7 @@ func NewSearch(cfg config.SearchConfig) *Search {
 		},
 		config:    cfg,
 		providers: config.DefaultConfig().Providers,
+		cache:     defaultSearchCache,
 	}
 }
 
@@ -83,6 +105,7 @@ func NewSearchWithConfig(cfg config.Config) *Search {
 		},
 		config:    cfg.Search,
 		providers: cfg.Providers,
+		cache:     defaultSearchCache,
 	}
 }
 
@@ -127,6 +150,13 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 	}
 	if engineName == "" {
 		engineName = "auto"
+	}
+
+	cacheKey := s.cacheKey(query, opts, engineName, providerMode)
+	if !opts.NoCache {
+		if cached, ok := s.getCached(cacheKey); ok {
+			return cached, nil
+		}
 	}
 
 	// Select engines to try based on the requested mode.
@@ -213,7 +243,11 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		rawResults, err := e.Query(query, opts)
 		if err != nil {
 			if engineName == "auto" {
-				fmt.Fprintf(os.Stderr, "[web-search] engine %s query failed: %v\n", e.Name(), err)
+				if errors.Is(err, ErrRateLimited) {
+					fmt.Fprintf(os.Stderr, "[web-search] engine %s rate-limited; trying next engine\n", e.Name())
+				} else {
+					fmt.Fprintf(os.Stderr, "[web-search] engine %s query failed: %v\n", e.Name(), err)
+				}
 				lastErr = err
 				continue
 			}
@@ -261,7 +295,7 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		}
 	}
 
-	return &SearchResponse{
+	resp := &SearchResponse{
 		Query:         query,
 		Engine:        usedEngine,
 		Provider:      usedEngine,
@@ -270,7 +304,98 @@ func (s *Search) Do(query string, opts SearchOptions) (*SearchResponse, error) {
 		Total:         len(results),
 		Results:       results,
 		SearchedAt:    time.Now(),
-	}, nil
+	}
+	if !opts.NoCache {
+		s.setCached(cacheKey, resp)
+	}
+	return resp, nil
+}
+
+func (s *Search) getCached(key string) (*SearchResponse, bool) {
+	cache := s.searchCache()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.entries == nil {
+		cache.entries = make(map[string]searchCacheEntry)
+	}
+	if cache.cacheTTL <= 0 {
+		cache.cacheTTL = time.Duration(config.DefaultCacheTTL) * time.Second
+	}
+	entry, ok := cache.entries[key]
+	if !ok {
+		return nil, false
+	}
+	if time.Since(entry.cachedAt) > cache.cacheTTL {
+		delete(cache.entries, key)
+		return nil, false
+	}
+	return cloneSearchResponse(entry.response), true
+}
+
+func (s *Search) setCached(key string, resp *SearchResponse) {
+	cache := s.searchCache()
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.entries == nil {
+		cache.entries = make(map[string]searchCacheEntry)
+	}
+	if cache.cacheTTL <= 0 {
+		cache.cacheTTL = time.Duration(config.DefaultCacheTTL) * time.Second
+	}
+	cache.entries[key] = searchCacheEntry{
+		response: cloneSearchResponse(resp),
+		cachedAt: time.Now(),
+	}
+}
+
+func (s *Search) searchCache() *searchCache {
+	if s.cache == nil {
+		s.cache = &searchCache{
+			entries:  make(map[string]searchCacheEntry),
+			cacheTTL: time.Duration(config.DefaultCacheTTL) * time.Second,
+		}
+	}
+	return s.cache
+}
+
+func (s *Search) cacheKey(query string, opts SearchOptions, engineName string, providerMode bool) string {
+	include := append([]string(nil), opts.IncludeDomains...)
+	exclude := append([]string(nil), opts.ExcludeDomains...)
+	sort.Strings(include)
+	sort.Strings(exclude)
+	parts := []string{
+		strings.TrimSpace(query),
+		opts.Locale,
+		opts.Category,
+		opts.TimeRange,
+		engineName,
+		fmt.Sprintf("provider_mode=%t", providerMode),
+		fmt.Sprintf("limit=%d", opts.Limit),
+		strings.Join(include, ","),
+		strings.Join(exclude, ","),
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func cloneSearchResponse(resp *SearchResponse) *SearchResponse {
+	if resp == nil {
+		return nil
+	}
+	clone := *resp
+	if resp.ProviderChain != nil {
+		clone.ProviderChain = append([]provider.Attempt(nil), resp.ProviderChain...)
+	}
+	if resp.Results != nil {
+		clone.Results = make([]SearchResult, len(resp.Results))
+		for i, result := range resp.Results {
+			clone.Results[i] = result
+			if result.Engines != nil {
+				clone.Results[i].Engines = append([]string(nil), result.Engines...)
+			}
+		}
+	}
+	return &clone
 }
 
 func enginesForProviders(engines []Engine, providers []provider.Provider) []Engine {

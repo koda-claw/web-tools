@@ -1,11 +1,30 @@
 package search
 
 import (
+	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func testResponse(status int, body string) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
 
 // fixtureNormal is a trimmed DDG Lite HTML page with two results.
 const fixtureNormal = `<!DOCTYPE html>
@@ -79,6 +98,7 @@ func TestCaptchaDetection(t *testing.T) {
 	assert.Nil(t, results)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "captcha")
+	assert.True(t, errors.Is(err, ErrRateLimited))
 }
 
 func TestEmptyResults(t *testing.T) {
@@ -101,6 +121,44 @@ func TestDDGLimitApplied(t *testing.T) {
 	}
 	assert.Len(t, results, 1)
 	_ = engine // engine constructed without error
+}
+
+func TestDuckDuckGoQueryHTTP429ReturnsRateLimitError(t *testing.T) {
+	t.Cleanup(func() { ddgRetrySleep = time.Sleep })
+	ddgRetrySleep = func(time.Duration) {}
+	engine := NewDuckDuckGoEngine()
+	engine.httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return testResponse(http.StatusTooManyRequests, "too many requests"), nil
+		}),
+	}
+
+	_, err := engine.Query("golang", SearchOptions{Limit: 1})
+
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrRateLimited))
+}
+
+func TestDuckDuckGoQueryRetriesRateLimit(t *testing.T) {
+	t.Cleanup(func() { ddgRetrySleep = time.Sleep })
+	ddgRetrySleep = func(time.Duration) {}
+	attempts := 0
+	engine := NewDuckDuckGoEngine()
+	engine.httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				return testResponse(http.StatusTooManyRequests, "too many requests"), nil
+			}
+			return testResponse(http.StatusOK, fixtureNormal), nil
+		}),
+	}
+
+	results, err := engine.Query("golang", SearchOptions{Limit: 1})
+
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, 2, attempts)
 }
 
 // fixtureWithRedirects uses real DDG Lite redirect link format.

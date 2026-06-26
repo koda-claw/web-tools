@@ -23,6 +23,7 @@ func Cmd() *cobra.Command {
 		flagLocale         string
 		flagCat            string
 		flagTime           string
+		flagNoCache        bool
 		flagIncludeDomains []string
 		flagExcludeDomains []string
 	)
@@ -40,7 +41,7 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
   web-tools web-search "climate change 2026" --time-range year --json`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			run(cmd, args[0], flagJSON, flagOutput, flagLimit, flagEngine, flagProvider, flagLocale, flagCat, flagTime, flagIncludeDomains, flagExcludeDomains)
+			run(cmd, args[0], flagJSON, flagOutput, flagLimit, flagEngine, flagProvider, flagLocale, flagCat, flagTime, flagNoCache, flagIncludeDomains, flagExcludeDomains)
 		},
 	}
 
@@ -52,13 +53,14 @@ instance (opt-in, requires Docker). Zero cost, no API keys.`,
 	cmd.Flags().StringVar(&flagLocale, "locale", "auto", "Language preference (zh-CN, en-US, auto)")
 	cmd.Flags().StringVar(&flagCat, "category", "general", "Search category: general / images / news / videos / files")
 	cmd.Flags().StringVar(&flagTime, "time-range", "any", "Time range: any / day / week / month / year")
+	cmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "Bypass in-process search result cache")
 	cmd.Flags().StringSliceVar(&flagIncludeDomains, "include-domain", nil, "Only include results from domain(s); repeat or comma-separate")
 	cmd.Flags().StringSliceVar(&flagExcludeDomains, "exclude-domain", nil, "Exclude results from domain(s); repeat or comma-separate")
 
 	return cmd
 }
 
-func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagIncludeDomains []string, flagExcludeDomains []string) {
+func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagNoCache bool, flagIncludeDomains []string, flagExcludeDomains []string) {
 	start := time.Now()
 	var metric metrics.Event
 	var runErr error
@@ -77,7 +79,7 @@ func run(cmd *cobra.Command, query string, flagJSON bool, flagOutput string, fla
 	}
 	s := search.NewSearchWithConfig(*cfg)
 
-	opts, err := buildSearchOptions(cmd, flagLimit, flagEngine, flagProvider, flagLocale, flagCategory, flagTimeRange, flagIncludeDomains, flagExcludeDomains)
+	opts, err := buildSearchOptions(cmd, flagLimit, flagEngine, flagProvider, flagLocale, flagCategory, flagTimeRange, flagNoCache, flagIncludeDomains, flagExcludeDomains)
 	if err != nil {
 		runErr = err
 		apperrors.HandleError(runErr)
@@ -121,7 +123,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func buildSearchOptions(cmd *cobra.Command, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagIncludeDomains []string, flagExcludeDomains []string) (search.SearchOptions, error) {
+func buildSearchOptions(cmd *cobra.Command, flagLimit int, flagEngine string, flagProvider string, flagLocale string, flagCategory string, flagTimeRange string, flagNoCache bool, flagIncludeDomains []string, flagExcludeDomains []string) (search.SearchOptions, error) {
 	var opts search.SearchOptions
 	engineChanged := cmd.Flags().Changed("engine")
 	providerChanged := cmd.Flags().Changed("provider")
@@ -149,6 +151,9 @@ func buildSearchOptions(cmd *cobra.Command, flagLimit int, flagEngine string, fl
 	}
 	if cmd.Flags().Changed("time-range") {
 		opts.TimeRange = flagTimeRange
+	}
+	if cmd.Flags().Changed("no-cache") {
+		opts.NoCache = flagNoCache
 	}
 	if cmd.Flags().Changed("include-domain") {
 		opts.IncludeDomains = normalizeDomainFlags(flagIncludeDomains)

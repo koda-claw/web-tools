@@ -154,11 +154,13 @@ type mockEngine struct {
 	queryErr    error
 	queryResult []RawResult
 	lastOpts    SearchOptions
+	queryCount  int
 }
 
 func (m *mockEngine) Name() string       { return m.name }
 func (m *mockEngine) HealthCheck() error { return m.healthErr }
 func (m *mockEngine) Query(_ string, opts SearchOptions) ([]RawResult, error) {
+	m.queryCount++
 	m.lastOpts = opts
 	if m.queryErr != nil {
 		return nil, m.queryErr
@@ -171,6 +173,7 @@ func makeConfiguredTestSearch(cfg config.SearchConfig, engines ...Engine) *Searc
 		engines:   engines,
 		config:    cfg,
 		providers: config.DefaultConfig().Providers,
+		cache:     newTestSearchCache(),
 	}
 }
 
@@ -185,6 +188,14 @@ func makeTestSearch(engines ...Engine) *Search {
 			DefaultProviderChain: []string{"searxng", "duckduckgo"},
 		},
 		providers: config.DefaultConfig().Providers,
+		cache:     newTestSearchCache(),
+	}
+}
+
+func newTestSearchCache() *searchCache {
+	return &searchCache{
+		entries:  make(map[string]searchCacheEntry),
+		cacheTTL: time.Duration(config.DefaultCacheTTL) * time.Second,
 	}
 }
 
@@ -268,6 +279,24 @@ func TestAutoMode_AllEnginesFail(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAutoMode_FallsBackOnRateLimitError(t *testing.T) {
+	ddgResults := []RawResult{
+		{Title: "DDG Result", URL: "https://ddg.example.com", Snippet: "via DDG", Source: "ddg.example.com"},
+	}
+
+	s := makeTestSearch(
+		&mockEngine{name: "searxng", queryErr: &RateLimitError{Engine: "searxng", Reason: "rate_limited"}},
+		&mockEngine{name: "duckduckgo", queryResult: ddgResults},
+	)
+
+	resp, err := s.Do("test query", SearchOptions{Engine: "auto"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "duckduckgo", resp.Engine)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, "DDG Result", resp.Results[0].Title)
+}
+
 // TestSpecificEngine_SearXNG verifies that --engine searxng skips DDG entirely.
 func TestSpecificEngine_SearXNG(t *testing.T) {
 	sxResults := []RawResult{
@@ -336,6 +365,89 @@ func TestSearchExplicitOptionsOverrideConfig(t *testing.T) {
 	assert.Equal(t, "en-US", sx.lastOpts.Locale)
 	assert.Equal(t, "news", sx.lastOpts.Category)
 	assert.Equal(t, "week", sx.lastOpts.TimeRange)
+}
+
+func TestSearchCacheHitSkipsEngine(t *testing.T) {
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeTestSearch(ddg)
+
+	first, err := s.Do("test", SearchOptions{Provider: "duckduckgo"})
+	require.NoError(t, err)
+	second, err := s.Do("test", SearchOptions{Provider: "duckduckgo"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, ddg.queryCount)
+	assert.Equal(t, first.Results, second.Results)
+}
+
+func TestSearchDefaultCacheSharedAcrossInstances(t *testing.T) {
+	original := defaultSearchCache
+	defaultSearchCache = newTestSearchCache()
+	t.Cleanup(func() { defaultSearchCache = original })
+
+	firstEngine := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	secondEngine := &mockEngine{
+		name:     "duckduckgo",
+		queryErr: errors.New("should not be called"),
+	}
+
+	first := NewSearchWithConfig(config.DefaultConfig())
+	first.engines = []Engine{firstEngine}
+	_, err := first.Do("test", SearchOptions{Provider: "duckduckgo"})
+	require.NoError(t, err)
+
+	second := NewSearchWithConfig(config.DefaultConfig())
+	second.engines = []Engine{secondEngine}
+	resp, err := second.Do("test", SearchOptions{Provider: "duckduckgo"})
+
+	require.NoError(t, err)
+	require.Len(t, resp.Results, 1)
+	assert.Equal(t, 1, firstEngine.queryCount)
+	assert.Equal(t, 0, secondEngine.queryCount)
+}
+
+func TestSearchNoCacheBypassesCache(t *testing.T) {
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeTestSearch(ddg)
+
+	_, err := s.Do("test", SearchOptions{Provider: "duckduckgo"})
+	require.NoError(t, err)
+	_, err = s.Do("test", SearchOptions{Provider: "duckduckgo", NoCache: true})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, ddg.queryCount)
+}
+
+func TestSearchCacheKeyIncludesTimeRange(t *testing.T) {
+	ddg := &mockEngine{
+		name: "duckduckgo",
+		queryResult: []RawResult{
+			{Title: "DDG Result", URL: "https://example.com", Snippet: "snippet", Source: "example.com"},
+		},
+	}
+	s := makeTestSearch(ddg)
+
+	_, err := s.Do("test", SearchOptions{Provider: "duckduckgo", TimeRange: "day"})
+	require.NoError(t, err)
+	_, err = s.Do("test", SearchOptions{Provider: "duckduckgo", TimeRange: "year"})
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, ddg.queryCount)
 }
 
 func TestSearchProviderOptionSelectsEngine(t *testing.T) {

@@ -1,10 +1,13 @@
 package search
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,11 +16,14 @@ import (
 )
 
 const (
-	ddgLiteURL = "https://lite.duckduckgo.com/lite"
-	ddgTimeout = 10 * time.Second
+	ddgLiteURL     = "https://lite.duckduckgo.com/lite"
+	ddgTimeout     = 10 * time.Second
+	ddgMaxAttempts = 3
 	// Mimic a real browser to avoid empty results / captcha.
 	ddgUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
+
+var ddgRetrySleep = time.Sleep
 
 // DuckDuckGoEngine queries DuckDuckGo Lite via HTML scraping. Zero dependencies.
 type DuckDuckGoEngine struct {
@@ -40,6 +46,24 @@ func (e *DuckDuckGoEngine) HealthCheck() error { return nil }
 // Query sends a search to DDG Lite and parses the HTML result table.
 // Category and TimeRange are not supported by DDG Lite and are silently ignored.
 func (e *DuckDuckGoEngine) Query(query string, opts SearchOptions) ([]RawResult, error) {
+	var lastErr error
+	for attempt := 1; attempt <= ddgMaxAttempts; attempt++ {
+		results, err := e.queryOnce(query, opts)
+		if err == nil {
+			return results, nil
+		}
+		lastErr = err
+		if !errors.Is(err, ErrRateLimited) || attempt == ddgMaxAttempts {
+			return nil, err
+		}
+		backoff := time.Duration(1<<attempt) * time.Second
+		fmt.Fprintf(os.Stderr, "[web-search] DuckDuckGo Lite rate-limited; retrying in %s (attempt %d/%d)\n", backoff, attempt+1, ddgMaxAttempts)
+		ddgRetrySleep(backoff)
+	}
+	return nil, lastErr
+}
+
+func (e *DuckDuckGoEngine) queryOnce(query string, opts SearchOptions) ([]RawResult, error) {
 	params := url.Values{}
 	params.Set("q", query)
 	// Map locale to DDG kl param (e.g. "zh-CN" → "zh-cn", "en-US" → "en-us").
@@ -84,6 +108,11 @@ func (e *DuckDuckGoEngine) Query(query string, opts SearchOptions) ([]RawResult,
 		)
 	}
 
+	bodyText := string(body)
+	if isDDGRateLimited(resp.StatusCode, bodyText) {
+		return nil, newDDGRateLimitError(resp.StatusCode, reqURL, rateLimitReason(resp.StatusCode, bodyText), resp.Header.Get("Retry-After"))
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, apperrors.NewEngineError(
 			"DuckDuckGo returned non-200 status",
@@ -93,7 +122,7 @@ func (e *DuckDuckGoEngine) Query(query string, opts SearchOptions) ([]RawResult,
 		)
 	}
 
-	results, err := parseDDGLiteHTML(string(body))
+	results, err := parseDDGLiteHTML(bodyText)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +133,28 @@ func (e *DuckDuckGoEngine) Query(query string, opts SearchOptions) ([]RawResult,
 	}
 
 	return results, nil
+}
+
+func newDDGRateLimitError(statusCode int, reqURL string, reason string, retryAfter string) error {
+	context := map[string]string{
+		"url":         reqURL,
+		"engine":      "duckduckgo",
+		"reason":      reason,
+		"status_code": strconv.Itoa(statusCode),
+	}
+	if retryAfter != "" {
+		context["retry_after"] = retryAfter
+	}
+	return &RateLimitError{
+		Engine: "duckduckgo",
+		Reason: reason,
+		Err: apperrors.NewEngineError(
+			"DuckDuckGo Lite rate limited the request",
+			reason,
+			context,
+			[]string{"try again later", "use --provider auto with another configured search provider"},
+		),
+	}
 }
 
 // parseDDGLiteHTML extracts search results from DuckDuckGo Lite's HTML table.
@@ -117,12 +168,7 @@ func (e *DuckDuckGoEngine) Query(query string, opts SearchOptions) ([]RawResult,
 // then zips them into RawResult values.
 func parseDDGLiteHTML(body string) ([]RawResult, error) {
 	if isCaptchaPage(body) {
-		return nil, apperrors.NewEngineError(
-			"DuckDuckGo returned a captcha page",
-			"captcha or anti-bot challenge detected",
-			nil,
-			[]string{"try again later", "use --engine searxng for higher throughput"},
-		)
+		return nil, newDDGRateLimitError(http.StatusOK, ddgLiteURL, "captcha", "")
 	}
 
 	doc, err := html.Parse(strings.NewReader(body))
@@ -241,6 +287,35 @@ func isCaptchaPage(body string) bool {
 	return strings.Contains(lower, "captcha") ||
 		strings.Contains(lower, "unusual traffic") ||
 		strings.Contains(lower, "please enable javascript")
+}
+
+func isDDGRateLimited(statusCode int, body string) bool {
+	if statusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if statusCode == http.StatusForbidden && isCaptchaPage(body) {
+		return true
+	}
+	if strings.TrimSpace(body) == "" {
+		return true
+	}
+	return isCaptchaPage(body)
+}
+
+func rateLimitReason(statusCode int, body string) string {
+	if statusCode == http.StatusTooManyRequests {
+		return "rate_limited"
+	}
+	if statusCode == http.StatusForbidden && isCaptchaPage(body) {
+		return "blocked"
+	}
+	if strings.TrimSpace(body) == "" {
+		return "empty_body"
+	}
+	if isCaptchaPage(body) {
+		return "captcha"
+	}
+	return "rate_limited"
 }
 
 // hasClass reports whether a node has the given CSS class.
